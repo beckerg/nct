@@ -32,8 +32,8 @@ test duration has elapsed.
           90   1003950     1797    0.23  112.53    8888.89
          100   1004822     1761    0.22  110.28    8881.17
 
-In the above the the -m option tells nct to print a status mark once per
-second, while the -d10 says run the test for a duration of 10 seconds.
+In the above example the the -m option tells nct to print a status mark once
+per second, while the -d10 says run the test for a duration of 10 seconds.
 The -t16 options tells nct to create 16 threads.  Each thread will read
 sequentially through the file at the next offset (i.e., they all share
 the same offset and hence do not all read the same blocks).
