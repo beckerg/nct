@@ -33,13 +33,14 @@ VPATH	:=
 # You probably don't need to change anything below this line.
 
 
+VERSION		:= $(shell git describe --abbrev=4 --dirty --always --tags)
+
 INCLUDE 	:= -I. -I../lib -I../../src/include
 CFLAGS 		+= -Wall -g -O2 ${INCLUDE}
-CDEFS 		:=
+CDEFS 		:= -DVERSION=\"${VERSION}\"
 DEBUG 		:= -g -O0 -DDEBUG -UNDEBUG
 CPPFLAGS	:= ${CDEFS}
 OBJ		:= ${SRC:.c=.o}
-
 
 CSCOPE_DIRS	?= \
 	. ${VPATH} \

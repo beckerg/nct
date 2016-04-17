@@ -66,7 +66,7 @@ static clp_option_t optionv[] = {
     CLP_OPTION_VERBOSE(&verbosity),
     CLP_OPTION_HELP,
 
-    { .optopt = 0 }
+    CLP_OPTION_END
 };
 
 static void *test_getattr_start(void *arg);

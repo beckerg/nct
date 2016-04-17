@@ -27,22 +27,15 @@
 #ifndef CLP_H
 #define CLP_H
 
-#define CLP_ERRBUFSZ    (128)
+#define CLP_ERRBUFSZ        (128)
 
-#define CLP_OPTION_TMPL(xoptopt, xargname, xexcludes, xlongopt, \
-                        xconvert, xresult, xcvtarg,             \
-                        xbefore, xafter, xparamv, xhelp)        \
-    .optopt = (xoptopt),        \
-    .argname = (xargname),      \
-    .excludes = (xexcludes),    \
-    .longopt = (xlongopt),      \
-    .convert = (xconvert),      \
-    .result = (xresult),        \
-    .cvtarg = (xcvtarg),        \
-    .before = (xbefore),        \
-    .after = (xafter),          \
-    .paramv = (xparamv),        \
-    .help = (xhelp),            \
+#define CLP_OPTION_END      { .optopt = 0 }
+#define CLP_PARAM_END       { .name = NULL }
+
+#define CLP_OPTION(xtype, xoptopt, xargname, xexcl, xhelp)          \
+    { CLP_OPTION_TMPL((xoptopt), #xargname, (xexcl), NULL,          \
+                      clp_convert_ ## xtype, &(xargname), 0,        \
+                      NULL, NULL, NULL, (xhelp)) }
 
 #define CLP_OPTION_HELP                                             \
     { CLP_OPTION_TMPL('h', NULL, "^v", "help",                      \
@@ -73,6 +66,22 @@
                    clp_convert_file, (xconf), 0,                    \
                    NULL, NULL, NULL,                                \
                    "specify a configuration file") }
+
+#define CLP_OPTION_TMPL(xoptopt, xargname, xexcludes, xlongopt,     \
+                        xconvert, xresult, xcvtarg,                 \
+                        xbefore, xafter, xparamv, xhelp)            \
+    .optopt = (xoptopt),        \
+    .argname = (xargname),      \
+    .excludes = (xexcludes),    \
+    .longopt = (xlongopt),      \
+    .convert = (xconvert),      \
+    .result = (xresult),        \
+    .cvtarg = (xcvtarg),        \
+    .before = (xbefore),        \
+    .after = (xafter),          \
+    .paramv = (xparamv),        \
+    .help = (xhelp),            \
+
 
 
 /* By default dprint() and eprint() print to stderr.  You can change that
@@ -156,14 +165,25 @@ extern clp_option_t *clp_option_find(clp_option_t *optionv, int optopt);
 
 extern void clp_option_priv1_set(clp_option_t *option, void *priv1);
 
-extern clp_convert_t clp_convert_int;
-extern clp_convert_t clp_convert_uint;
-extern clp_convert_t clp_convert_long;
-extern clp_convert_t clp_convert_ulong;
+extern clp_convert_t clp_convert_bool;
 
 extern clp_convert_t clp_convert_string;
 extern clp_convert_t clp_convert_file;
 extern clp_convert_t clp_convert_inc;
+
+extern clp_convert_t clp_convert_int;
+extern clp_convert_t clp_convert_u_int;
+extern clp_convert_t clp_convert_long;
+extern clp_convert_t clp_convert_u_long;
+
+extern clp_convert_t clp_convert_int8_t;
+extern clp_convert_t clp_convert_uint8_t;
+extern clp_convert_t clp_convert_int16_t;
+extern clp_convert_t clp_convert_uint16_t;
+extern clp_convert_t clp_convert_int32_t;
+extern clp_convert_t clp_convert_uint32_t;
+extern clp_convert_t clp_convert_int64_t;
+extern clp_convert_t clp_convert_uint64_t;
 
 extern clp_option_cb_t clp_help;
 extern clp_option_cb_t clp_version;

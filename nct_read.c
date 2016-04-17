@@ -65,17 +65,17 @@ static clp_posparam_t posparamv[] = {
     {
         .name = "[length]",
         .help = "read length (in bytes)",
-        .convert = clp_convert_ulong, .result = &length,
+        .convert = clp_convert_u_long, .result = &length,
     },
 
-    { .name = NULL }
+    CLP_PARAM_END
 };
 
 static clp_option_t optionv[] = {
     CLP_OPTION_VERBOSE(&verbosity),
     CLP_OPTION_HELP,
 
-    { .optopt = 0 }
+    CLP_OPTION_END
 };
 
 static void *test_read_start(void *arg);

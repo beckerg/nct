@@ -62,7 +62,7 @@
 #include "nct_read.h"
 #include "nct.h"
 
-static char svnid[] = "$Id: main.c 392 2016-04-13 11:21:51Z greg $";
+static char version[] = VERSION;
 
 char *progname;
 
@@ -76,79 +76,33 @@ char *outdir = NULL;
 long duration = 60;
 char *command = NULL;
 char *args = NULL;
-int mark = 0;
-
-#if 0
-    /* Print more detailed help if -v was given.
-     */
-    if (verbosity > 0) {
-        printf("  COMMAND  ARGS...\n");
-        printf("  getattr  [user@]rhost:path\n");
-        printf("  read     [user@]rhost:path [length]\n");
-        printf("  shell\n");
-    } else {
-        printf("Use -hv for more detailed help\n");
-    }
-#endif
+bool mark = false;
 
 static clp_posparam_t posparamv[] = {
-    {
-        .name = "command",
-        .help = "command to run [getattr,read,shell]",
-        .convert = clp_convert_string, .result = &command,
-    },
+    { .name = "command",
+      .help = "command to run [getattr,read,shell]",
+      .convert = clp_convert_string, .result = &command, },
 
-    {
-        .name = "[args...]",
-        .help = "command arguments",
-        .convert = clp_convert_string, .result = &args,
-    },
+    { .name = "[args...]",
+      .help = "command arguments",
+      .convert = clp_convert_string, .result = &args, },
 
-    { .name = NULL }
+    CLP_PARAM_END
 };
 
 static clp_option_t optionv[] = {
     CLP_OPTION_VERBOSE(&verbosity),
-    CLP_OPTION_VERSION(svnid),
+    CLP_OPTION_VERSION(version),
     CLP_OPTION_HELP,
 
-    {
-        .optopt = 'd', .argname = "duration",
-        .help = "duration of the test (in records)",
-        .convert = clp_convert_long, .result = &duration, .cvtarg = (void *)10,
-    },
+    CLP_OPTION(long, 'd', duration, NULL, "duration of the test (in seconds)"),
+    CLP_OPTION(bool, 'm', mark, NULL, "print status once per second"),
+    CLP_OPTION(string, 'o', outdir, NULL, "directory in which to store results"),
+    CLP_OPTION(uint16_t, 'p', port, NULL, "NFS port"),
+    CLP_OPTION(string, 'T', term, NULL, "terminal type for gnuplot"),
+    CLP_OPTION(u_int, 't', nthreads, NULL, "number of worker threads"),
 
-    {
-        .optopt = 'm',
-        .help = "print status once per second",
-        .result = &mark,
-    },
-
-    {
-        .optopt = 'o', .argname = "outdir",
-        .help = "directory in which to store results file",
-        .convert = clp_convert_string, .result = &outdir,
-    },
-
-    {
-        .optopt = 'p', .argname = "port",
-        .help = "NFS port",
-        .convert = clp_convert_int, .result = &port, .cvtarg = (void *)10,
-    },
-
-    {
-        .optopt = 'T', .argname = "term",
-        .help = "terminal type for gnuplot",
-        .convert = clp_convert_string, .result = &term,
-    },
-
-    {
-        .optopt = 't', .argname = "threads",
-        .help = "number of worker threads",
-        .convert = clp_convert_uint, .result = &nthreads, .cvtarg = (void *)10,
-    },
-
-    { .optopt = 0 }
+    CLP_OPTION_END
 };
 
 static bool
