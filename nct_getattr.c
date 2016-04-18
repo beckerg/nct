@@ -63,7 +63,7 @@ static clp_posparam_t posparamv[] = {
 };
 
 static clp_option_t optionv[] = {
-    CLP_OPTION_VERBOSE(&verbosity),
+    CLP_OPTION_VERBOSE(verbosity),
     CLP_OPTION_HELP,
 
     CLP_OPTION_END

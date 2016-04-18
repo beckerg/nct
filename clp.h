@@ -39,33 +39,33 @@
 
 #define CLP_OPTION_HELP                                             \
     { CLP_OPTION_TMPL('h', NULL, "^v", "help",                      \
-                   NULL, NULL, 0,                                   \
-                   NULL, clp_help, clp_posparam_none,               \
-                   "print this help list") }
+                      NULL, NULL, 0,                                \
+                      NULL, clp_help, clp_posparam_none,            \
+                      "print this help list") }
 
 #define CLP_OPTION_VERSION(xversion)                                \
-    { CLP_OPTION_TMPL('V', NULL, "*", "version",                    \
-                   NULL, (xversion), 0,                             \
-                   NULL, clp_version, clp_posparam_none,            \
-                   "print version") }
+    { CLP_OPTION_TMPL('V', NULL, "*", #xversion,                    \
+                      NULL, &(xversion), 0,                         \
+                      NULL, clp_version, clp_posparam_none,         \
+                      "print version") }
 
 #define CLP_OPTION_VERBOSE(xverbose)                                \
-    { CLP_OPTION_TMPL('v', NULL, NULL, "verbose",                   \
-                   clp_convert_inc, (xverbose), 0,                  \
-                   NULL, NULL, NULL,                                \
-                   "increase verbosity") }
+    { CLP_OPTION_TMPL('v', NULL, NULL, #xverbose,                   \
+                      clp_convert_incr, &(xverbose), 0,             \
+                      NULL, NULL, NULL,                             \
+                      "increase verbosity") }
 
 #define CLP_OPTION_DRYRUN(xdryrun)                                  \
-    { CLP_OPTION_TMPL('n', NULL, NULL, "dry-run",                   \
-                   NULL, (xdryrun), 0,                              \
-                   NULL, NULL, NULL,                                \
-                   "trace execution but do not change anything") }
+    { CLP_OPTION_TMPL('n', NULL, NULL, #xdryrun,                    \
+                      clp_convert_incr, &(xdryrun), 0,              \
+                      NULL, NULL, NULL,                             \
+                      "trace execution but do not change anything") }
 
 #define CLP_OPTION_CONF(xconf)                                      \
-    { CLP_OPTION_TMPL('C', "cf", NULL, "conf",                      \
-                   clp_convert_file, (xconf), 0,                    \
-                   NULL, NULL, NULL,                                \
-                   "specify a configuration file") }
+    { CLP_OPTION_TMPL('C', #xconf, NULL, #xconf,                    \
+                      clp_convert_file, &(xconf), 0,                \
+                      NULL, NULL, NULL,                             \
+                      "specify a configuration file") }
 
 #define CLP_OPTION_TMPL(xoptopt, xargname, xexcludes, xlongopt,     \
                         xconvert, xresult, xcvtarg,                 \
@@ -169,7 +169,7 @@ extern clp_convert_t clp_convert_bool;
 
 extern clp_convert_t clp_convert_string;
 extern clp_convert_t clp_convert_file;
-extern clp_convert_t clp_convert_inc;
+extern clp_convert_t clp_convert_incr;
 
 extern clp_convert_t clp_convert_int;
 extern clp_convert_t clp_convert_u_int;

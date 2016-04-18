@@ -175,7 +175,7 @@ clp_convert_file(void *cvtarg, const char *str, void *dst)
 }
 
 int
-clp_convert_inc(void *cvtarg, const char *str, void *dst)
+clp_convert_incr(void *cvtarg, const char *str, void *dst)
 {
     int *result = dst;
 
@@ -916,12 +916,6 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
 
                 return rc;
             }
-        }
-        else if (o->result && !o->argname) {
-
-            /* Presume o->result points to an int and increment it.
-             */
-            clp_convert_inc(NULL, NULL, o->result);
         }
     }
 
