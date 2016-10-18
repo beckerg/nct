@@ -65,6 +65,7 @@
 static char version[] = VERSION;
 
 char *progname;
+int verbosity;
 
 FILE *dprint_stream;
 FILE *eprint_stream;
@@ -81,11 +82,11 @@ bool mark = false;
 static clp_posparam_t posparamv[] = {
     { .name = "command",
       .help = "command to run [getattr,read,shell]",
-      .convert = clp_convert_string, .result = &command, },
+      .convert = clp_cvt_string, .cvtdst = &command, },
 
     { .name = "[args...]",
       .help = "command arguments",
-      .convert = clp_convert_string, .result = &args, },
+      .convert = clp_cvt_string, .cvtdst = &args, },
 
     CLP_PARAM_END
 };
@@ -95,12 +96,12 @@ static clp_option_t optionv[] = {
     CLP_OPTION_VERSION(version),
     CLP_OPTION_HELP,
 
-    CLP_OPTION(long, 'd', duration, NULL, "duration of the test (in seconds)"),
-    CLP_OPTION(bool, 'm', mark, NULL, "print status once per second"),
-    CLP_OPTION(string, 'o', outdir, NULL, "directory in which to store results"),
-    CLP_OPTION(uint16_t, 'p', port, NULL, "NFS port"),
-    CLP_OPTION(string, 'T', term, NULL, "terminal type for gnuplot"),
-    CLP_OPTION(u_int, 't', nthreads, NULL, "number of worker threads"),
+    CLP_OPTION(long, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
+    CLP_OPTION(bool, 'm', mark, NULL, NULL, "print status once per second"),
+    CLP_OPTION(string, 'o', outdir, NULL, NULL, "directory in which to store results"),
+    CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "NFS port"),
+    CLP_OPTION(string, 'T', term, NULL, NULL, "terminal type for gnuplot"),
+    CLP_OPTION(u_int, 'j', nthreads, NULL, NULL, "number of worker threads"),
 
     CLP_OPTION_END
 };

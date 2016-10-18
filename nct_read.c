@@ -59,13 +59,13 @@ static clp_posparam_t posparamv[] = {
     {
         .name = "rhostpath",
         .help = "[user@]rhost:path",
-        .convert = clp_convert_string, .result = &rhostpath,
+        .convert = clp_cvt_string, .cvtdst = &rhostpath,
     },
 
     {
         .name = "[length]",
         .help = "read length (in bytes)",
-        .convert = clp_convert_u_long, .result = &length,
+        .convert = clp_cvt_u_long, .cvtdst = &length,
     },
 
     CLP_PARAM_END

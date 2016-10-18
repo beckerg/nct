@@ -56,7 +56,7 @@ static clp_posparam_t posparamv[] = {
     {
         .name = "rhostpath",
         .help = "[user@]rhost:path",
-        .convert = clp_convert_string, .result = &rhostpath,
+        .convert = clp_cvt_string, .cvtdst = &rhostpath,
     },
 
     { .name = NULL }
