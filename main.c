@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2006,2011,2014-2016 Greg Becker.  All rights reserved.
+ * Copyright (c) 2001-2006,2011,2014-2017 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -62,7 +62,7 @@
 #include "nct_read.h"
 #include "nct.h"
 
-static char version[] = VERSION;
+static char nct_version[] = NCT_VERSION;
 
 char *progname;
 int verbosity;
@@ -70,9 +70,9 @@ int verbosity;
 FILE *dprint_stream;
 FILE *eprint_stream;
 
-unsigned int nthreads = 1;
+unsigned int jobs = 1;
 in_port_t port = 2049;
-char *term = "png";     // Term type for gnuplot
+char *term = "png";         // Term type for gnuplot
 char *outdir = NULL;
 long duration = 60;
 char *command = NULL;
@@ -93,15 +93,15 @@ static clp_posparam_t posparamv[] = {
 
 static clp_option_t optionv[] = {
     CLP_OPTION_VERBOSE(verbosity),
-    CLP_OPTION_VERSION(version),
+    CLP_OPTION_VERSION(nct_version),
     CLP_OPTION_HELP,
 
     CLP_OPTION(long, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
-    CLP_OPTION(bool, 'm', mark, NULL, NULL, "print status once per second"),
+    CLP_OPTION(u_int, 'j', jobs, NULL, NULL, "max number of concurrent jobs (worker threads)"),
+    CLP_OPTION(bool, 'm', mark, NULL, NULL, "print a status mark once per second"),
     CLP_OPTION(string, 'o', outdir, NULL, NULL, "directory in which to store results"),
-    CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "NFS port"),
+    CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "remote NFSd port"),
     CLP_OPTION(string, 'T', term, NULL, NULL, "terminal type for gnuplot"),
-    CLP_OPTION(u_int, 'j', nthreads, NULL, NULL, "number of worker threads"),
 
     CLP_OPTION_END
 };
@@ -117,7 +117,7 @@ given(int c)
 int
 main(int argc, char **argv)
 {
-    char errbuf[CLP_ERRBUFSZ];
+    char errbuf[128];
     char state[256];
     char *envopts;
     int optind;
@@ -131,7 +131,7 @@ main(int argc, char **argv)
     dprint_stream = stderr;
     eprint_stream = stderr;
 
-    (void)initstate((unsigned long)time((time_t *)0), state, sizeof(state));
+    initstate((u_long)time(NULL), state, sizeof(state));
 
     /* TODO: Get options from the environment.
      */
@@ -150,7 +150,7 @@ main(int argc, char **argv)
         }
     }
 
-    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, &optind);
+    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, sizeof(errbuf), &optind);
     if (rc) {
         eprint("%s\n", errbuf);
         exit(rc);
@@ -241,7 +241,7 @@ main(int argc, char **argv)
         abort();
     }
 
-    for (i = 0; i < nthreads; ++i) {
+    for (i = 0; i < jobs; ++i) {
         req = nct_req_alloc(mnt);
 
         req->req_priv = priv;
@@ -267,16 +267,16 @@ dprint_func(int lvl, const char *func, int line, const char *fmt, ...)
     char msg[256];
     va_list ap;
 
-    if (verbosity >= lvl) {
-        (void)snprintf(msg, sizeof(msg), "%s(%d): %s:%d ",
-                       progname, getpid(), func, line);
+    msg[0] = '\000';
 
-        va_start(ap, fmt);
-        vsnprintf(msg+strlen(msg), sizeof(msg)-strlen(msg), fmt, ap);
-        va_end(ap);
+    if (verbosity > 1)
+        snprintf(msg, sizeof(msg), "%s: %16s %4d:  ", progname, func, line);
 
-        fputs(msg, dprint_stream);
-    }
+    va_start(ap, fmt);
+    vsnprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), fmt, ap);
+    va_end(ap);
+
+    fputs(msg, dprint_stream);
 }
 
 
@@ -288,10 +288,10 @@ eprint(const char *fmt, ...)
     char msg[256];
     va_list ap;
 
-    (void)snprintf(msg, sizeof(msg), "%s: ", progname);
+    snprintf(msg, sizeof(msg), "%s: ", progname);
 
     va_start(ap, fmt);
-    vsnprintf(msg+strlen(msg), sizeof(msg)-strlen(msg), fmt, ap);
+    vsnprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), fmt, ap);
     va_end(ap);
 
     fputs(msg, eprint_stream);

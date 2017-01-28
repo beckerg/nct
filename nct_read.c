@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 Greg Becker.  All rights reserved.
+ * Copyright (c) 2015-2017 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -92,12 +92,12 @@ given(int c)
 void *
 test_read_init(int argc, char **argv, int duration, start_t **startp, char **rhostpathp)
 {
-    char errbuf[CLP_ERRBUFSZ];
     test_read_priv_t *priv;
+    char errbuf[128];
     int optind;
     int rc;
 
-    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, &optind);
+    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, sizeof(errbuf), &optind);
     if (rc) {
         eprint("%s\n", errbuf);
         exit(rc);
@@ -128,7 +128,7 @@ test_read_init(int argc, char **argv, int duration, start_t **startp, char **rho
 
     *startp = test_read_start;
     *rhostpathp = rhostpath;
-    
+
     return priv;
 }
 
@@ -184,7 +184,6 @@ test_read_start(void *arg)
     if (offset + priv->pr_length > vn->xvn_fattr.size) {
         eprint("file smaller than request length: size=%lu length=%u\n",
                vn->xvn_fattr.size, priv->pr_length);
-               
         nct_worker_exit(mnt);
         return NULL;
     }

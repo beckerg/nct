@@ -45,49 +45,92 @@
 
 #include "clp.h"
 
-//#define CLP_DEBUG
+#define CLP_DEBUG
+
+struct clp_suftab {
+    const char *list;
+    double mult[];
+};
+
+#if 0
+static struct clp_suftab clp_suftab_iec = {
+    .list = "kmgtpezy",
+    .mult = { 0x1p10, 0x1p20, 0x1p30, 0x1p40, 0x1p50, 0x1p60, 0x1p70, 0x1p80 }
+};
+
+static struct clp_suftab clp_suftab_si = {
+    .list = "KMGTPEZY",
+    .mult = { 1e3, 1e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24 }
+};
+#endif
+
+static struct clp_suftab clp_suftab_combo = {
+    .list = "kmgtpezyKMGTPEZYbw",
+    .mult = { 0x1p10, 0x1p20, 0x1p30, 0x1p40, 0x1p50, 0x1p60, 0x1p70, 0x1p80,
+              1e3, 1e6, 1e9, 1e12, 1e15, 1e18, 1e21, 1e24,
+              512, sizeof(int) }
+};
+
+static struct clp_suftab clp_suftab_time_t = {
+    .list = "smhdwyc",
+    .mult = { 1, 60, 3600, 86400, 86400 * 7, 86400 * 365, 86400 * 365 * 100ul }
+};
 
 
 clp_posparam_t clp_posparam_none[] = {
     { .name = NULL }
 };
 
-/* dprint() prints a message if (lvl >= clp_debug).
- */
-#ifdef CLP_DEBUG
-static int clp_debug = 3;
 
+static int clp_debug;
+
+#ifdef CLP_DEBUG
+/* dprint() prints a debug message to stdout if (clp_debug >= lvl).
+ */
 #define dprint(lvl, ...)                                                \
 do {                                                                    \
     if (clp_debug >= (lvl)) {                                           \
-        clp_printf(stdout, __func__, __LINE__, __VA_ARGS__);            \
+        dprint_impl(__FILE__, __LINE__, __func__, stdout, __VA_ARGS__); \
     }                                                                   \
 } while (0);
 
 /* Called via the dprint() macro..
  */
-void
-clp_printf(FILE *fp, const char *func, int line, const char *fmt, ...)
+static void
+dprint_impl(const char *file, int line, const char *func, FILE *fp, const char *fmt, ...)
 {
-    char msg[256];
-    int msglen;
     va_list ap;
 
-    msg[0] = '\000';
-    if (func) {
-        snprintf(msg, sizeof(msg), "%4d %-12s ", line, func);
-    }
-    msglen = strlen(msg);
+    if (!fp)
+        fp = stderr;
+
+    if (file && func)
+        fprintf(fp, "  +%-4d %-6s %-12s  ", line, file, func);
 
     va_start(ap, fmt);
-    vsnprintf(msg + msglen, sizeof(msg) - msglen, fmt, ap);
+    vfprintf(fp, fmt, ap);
     va_end(ap);
-
-    fputs(msg, fp ? fp : stderr);
 }
+
 #else
+
 #define dprint(lvl, ...)
 #endif /* CLP_DEBUG */
+
+/* Format and save an error message for retrieval by the caller
+ * of clp_parse().
+ */
+static void
+eprint(clp_t *clp, const char *fmt, ...)
+{
+    va_list ap;
+
+    if (clp->errbuf) {
+        va_start(ap, fmt);
+        vsnprintf(clp->errbuf, clp->errbufsz, fmt, ap);
+        va_end(ap);
+    }
+}
 
 
 clp_option_t *
@@ -111,19 +154,6 @@ clp_option_priv_set(clp_option_t *option, void *priv)
     if (option) {
         option->priv = priv;
     }
-}
-
-/* Format and save an error message for retrieval by the caller
- * of clp_parse().
- */
-void
-clp_eprint(clp_t *clp, const char *fmt, ...)
-{
-    va_list ap;
-
-    va_start(ap, fmt);
-    vsnprintf(clp->errbuf, CLP_ERRBUFSZ, fmt, ap);
-    va_end(ap);
 }
 
 /* An option's conversion procedure is called each time the
@@ -202,36 +232,33 @@ clp_cvt_incr(const char *optarg, int flags, void *parms, void *dst)
     return 0;
 }
 
-static double
-clp_cvt_strtold(const char * restrict nptr, char ** restrict endptr, int base)
-{
-    return strtold(nptr, endptr);
-}
-
 /* This template produces type-specific functions to convert a string
  * of one or more delimited numbers to a single/vector of integers.
  *
- * If cvtarg is nil, then optarg is expected to be a simple string that
- * can be parsed by strtol().  If cvtarg is not nil, then it points to
- * a clp_cvtparms_t structure which describes how to parse optarg.
+ * Each string to be converted may end in a single character suffix
+ * from suftab which modifies the result.
+ *
+ * Note that we use strtold() to parse each number in order to allow
+ * the caller maximum flexibility when specifying number formats.
+ * There is the possibility for loss of precision if long double
+ * on the target platform doesn't have at least as many bits in the
+ * significand as the widest integer type for which this function
+ * may be called.
  */
-#define CLP_CVT_XX(_xsuffix, _xtype, _xmin, _xmax, _xvaltype, _xvalcvt) \
+#define CLP_CVT_XX(_xsuffix, _xtype, _xmin, _xmax, _suftab)             \
 int                                                                     \
 clp_cvt_ ## _xsuffix(const char *optarg, int flags, void *parms, void *dst) \
 {                                                                       \
+    const struct clp_suftab *suftab = &(_suftab);                       \
     CLP_VECTOR(vectorbuf, _xtype, 1, "");                               \
     clp_vector_t *vector;                                               \
     char *str, *strbase;                                                \
-    char *tok, *end;                                                    \
     _xtype *result;                                                     \
-    _xvaltype val;                                                      \
-    int xerrno;                                                         \
-    int base;                                                           \
+    bool rangechk;                                                      \
+    int nrange;                                                         \
     int n;                                                              \
                                                                         \
-    result = dst;                                                       \
-    base = flags;                                                       \
-    if (!result || base < 0 || base == 1 || base > 36) {                \
+    if (!optarg || !dst) {                                              \
         errno = EINVAL;                                                 \
         return EX_DATAERR;                                              \
     }                                                                   \
@@ -241,95 +268,131 @@ clp_cvt_ ## _xsuffix(const char *optarg, int flags, void *parms, void *dst) \
         vector = parms;                                                 \
     }                                                                   \
                                                                         \
-    str = strdup(optarg);                                               \
-    if (!str) {                                                         \
-        errno = ENOMEM;                                                 \
-        return EX_DATAERR;                                              \
+    /* Only call strdup if there are delimiters in optarg.              \
+     */                                                                 \
+    str = (char *)optarg;                                               \
+    strbase = strpbrk(str, vector->delim);                              \
+    if (strbase) {                                                      \
+        strbase = strdup(optarg);                                       \
+        if (!strbase) {                                                 \
+            errno = ENOMEM;                                             \
+            return EX_DATAERR;                                          \
+        }                                                               \
+        str = strbase;                                                  \
     }                                                                   \
                                                                         \
-    strbase = str;                                                      \
-    end = NULL;                                                         \
+    rangechk = (_xmin) < (_xmax);                                       \
+    result = dst;                                                       \
+    nrange = 0;                                                         \
+    errno = 0;                                                          \
                                                                         \
-    for (n = 0; n < vector->size; ++n) {                                \
-        tok = strsep(&str, vector->delim);                              \
-        if (!tok) {                                                     \
-            break;                                                      \
-        }                                                               \
-        else if (!*tok) {                                               \
-            *result++ = 0;                                              \
-            continue;                                                   \
+    for (n = 0; n < vector->size && str; ++n, ++result) {               \
+        char *tok, *end;                                                \
+        long double val;                                                \
+                                                                        \
+        if (strbase) {                                                  \
+            tok = strsep(&str, vector->delim);                          \
+            if (tok && *tok == '\000') {                                \
+                *result = 0;                                            \
+                continue;                                               \
+            }                                                           \
+        } else {                                                        \
+            tok = str;                                                  \
+            str = NULL;                                                 \
         }                                                               \
                                                                         \
-        end = NULL;                                                     \
         errno = 0;                                                      \
-                                                                        \
-        val = _xvalcvt(tok, &end, base);                                \
+        val = strtold(tok, &end);                                       \
                                                                         \
         if (errno) {                                                    \
-            break;                                                      \
+            if (errno != ERANGE) {                                      \
+                *result = val;                                          \
+                break;                                                  \
+            }                                                           \
+            ++nrange;                                                   \
         }                                                               \
-        else if (*end) {                                                \
+                                                                        \
+        if (end == tok) {                                               \
             errno = EINVAL;                                             \
-            break;                                                      \
-        }                                                               \
-        else if (val < _xmin || val > _xmax) {                          \
-            errno = ERANGE;                                             \
+            *result = 0;                                                \
             break;                                                      \
         }                                                               \
                                                                         \
-        *result++ = val;                                                \
+        if (*end) {                                                     \
+            const char *pc;                                             \
+                                                                        \
+            pc = strchr(suftab->list, *end);                            \
+            if (!pc) {                                                  \
+                errno = EINVAL;                                         \
+                *result = 0;                                            \
+                break;                                                  \
+            }                                                           \
+                                                                        \
+            val *= *(suftab->mult + (pc - suftab->list));               \
+        }                                                               \
+                                                                        \
+        if (rangechk && (val < (_xmin) || val > (_xmax))) {             \
+            val = (val < (_xmin)) ? (_xmin) : (_xmax);                  \
+            ++nrange;                                                   \
+        }                                                               \
+                                                                        \
+        *result = val;                                                  \
     }                                                                   \
                                                                         \
     vector->len = n;                                                    \
-                                                                        \
-    if (errno) {                                                        \
-    }                                                                   \
-    else if (n >= vector->size && str) {                                \
+    if (str && vector->len >= vector->size) {                           \
         errno = E2BIG;                                                  \
     }                                                                   \
                                                                         \
-    xerrno = errno;                                                     \
-    free(strbase);                                                      \
-    errno = xerrno;                                                     \
+    if (nrange > 0 && !errno) {                                         \
+        errno = ERANGE;                                                 \
+    }                                                                   \
+                                                                        \
+    if (strbase) {                                                      \
+        int save = errno;                                               \
+                                                                        \
+        free(strbase);                                                  \
+        errno = save;                                                   \
+    }                                                                   \
                                                                         \
     return errno ? EX_DATAERR : 0;                                      \
 }
 
-CLP_CVT_XX(char,        char,       CHAR_MIN,   CHAR_MAX,   long,           strtol);
-CLP_CVT_XX(u_char,      u_char,     0,          UCHAR_MAX,  u_long,         strtoul);
+CLP_CVT_XX(char,        char,       CHAR_MIN,   CHAR_MAX,   clp_suftab_combo);
+CLP_CVT_XX(u_char,      u_char,     0,          UCHAR_MAX,  clp_suftab_combo);
 
-CLP_CVT_XX(short,       short,      SHRT_MIN,   SHRT_MAX,   long,           strtol);
-CLP_CVT_XX(u_short,     u_short,    0,          USHRT_MAX,  u_long,         strtoul);
+CLP_CVT_XX(short,       short,      SHRT_MIN,   SHRT_MAX,   clp_suftab_combo);
+CLP_CVT_XX(u_short,     u_short,    0,          USHRT_MAX,  clp_suftab_combo);
 
-CLP_CVT_XX(int,         int,        INT_MIN,    INT_MAX,    long,           strtol);
-CLP_CVT_XX(u_int,       u_int,      0,          UINT_MAX,   u_long,         strtoul);
+CLP_CVT_XX(int,         int,        INT_MIN,    INT_MAX,    clp_suftab_combo);
+CLP_CVT_XX(u_int,       u_int,      0,          UINT_MAX,   clp_suftab_combo);
 
-CLP_CVT_XX(long,        long,       LONG_MIN,   LONG_MAX,   long,           strtol);
-CLP_CVT_XX(u_long,      u_long,     0,          ULONG_MAX,  u_long,         strtoul);
+CLP_CVT_XX(long,        long,       LONG_MIN,   LONG_MAX,   clp_suftab_combo);
+CLP_CVT_XX(u_long,      u_long,     0,          ULONG_MAX,  clp_suftab_combo);
 
-CLP_CVT_XX(float,       float,      -FLT_MAX,   FLT_MAX,    long double,    clp_cvt_strtold);
-CLP_CVT_XX(double,      double,     -DBL_MAX,   DBL_MAX,    long double,    clp_cvt_strtold);
+CLP_CVT_XX(float,       float,      0,          0,          clp_suftab_combo);
+CLP_CVT_XX(double,      double,     0,          0,          clp_suftab_combo);
 
-CLP_CVT_XX(int8_t,      int8_t,     INT8_MIN,   INT8_MAX,   long,           strtol);
-CLP_CVT_XX(uint8_t,     uint8_t,    0,          UINT8_MAX,  u_long,         strtoul);
+CLP_CVT_XX(int8_t,      int8_t,     INT8_MIN,   INT8_MAX,   clp_suftab_combo);
+CLP_CVT_XX(uint8_t,     uint8_t,    0,          UINT8_MAX,  clp_suftab_combo);
 
-CLP_CVT_XX(int16_t,     int16_t,    INT16_MIN,  INT16_MAX,  long,           strtol);
-CLP_CVT_XX(uint16_t,    uint16_t,   0,          UINT16_MAX, u_long,         strtoul);
+CLP_CVT_XX(int16_t,     int16_t,    INT16_MIN,  INT16_MAX,  clp_suftab_combo);
+CLP_CVT_XX(uint16_t,    uint16_t,   0,          UINT16_MAX, clp_suftab_combo);
 
-CLP_CVT_XX(int32_t,     int32_t,    INT32_MIN,  INT32_MAX,  long,           strtol);
-CLP_CVT_XX(uint32_t,    uint32_t,   0,          UINT32_MAX, u_long,         strtoul);
+CLP_CVT_XX(int32_t,     int32_t,    INT32_MIN,  INT32_MAX,  clp_suftab_combo);
+CLP_CVT_XX(uint32_t,    uint32_t,   0,          UINT32_MAX, clp_suftab_combo);
 
-CLP_CVT_XX(int64_t,     int64_t,    INT64_MIN,  INT64_MAX,  long long,      strtoll);
-CLP_CVT_XX(uint64_t,    uint64_t,   0,          UINT64_MAX, unsigned long long, strtoull);
+CLP_CVT_XX(int64_t,     int64_t,    INT64_MIN,  INT64_MAX,  clp_suftab_combo);
+CLP_CVT_XX(uint64_t,    uint64_t,   0,          UINT64_MAX, clp_suftab_combo);
 
-CLP_CVT_XX(intmax_t,    intmax_t,   0,          INT_MAX,    intmax_t,       strtoimax);
-CLP_CVT_XX(uintmax_t,   uintmax_t,  0,          UINT_MAX,   uintmax_t,      strtoumax);
+CLP_CVT_XX(intmax_t,    intmax_t,   INTMAX_MIN, INTMAX_MAX, clp_suftab_combo);
+CLP_CVT_XX(uintmax_t,   uintmax_t,  0,          UINTMAX_MAX,clp_suftab_combo);
 
-CLP_CVT_XX(intptr_t,    intptr_t,   0,          INT_MAX,    intptr_t,       strtoimax);
-CLP_CVT_XX(uintptr_t,   uintptr_t,  0,          UINT_MAX,   uintptr_t,      strtoumax);
+CLP_CVT_XX(intptr_t,    intptr_t,   INTPTR_MIN, INTPTR_MAX, clp_suftab_combo);
+CLP_CVT_XX(uintptr_t,   uintptr_t,  0,          UINTPTR_MAX,clp_suftab_combo);
 
-CLP_CVT_XX(size_t,      size_t,     0,          SIZE_MAX,   unsigned long long, strtoull);
-CLP_CVT_XX(time_t,      time_t,     0,          LONG_MAX,   long long,      strtoll);
+CLP_CVT_XX(size_t,      size_t,     0,          SIZE_MAX,   clp_suftab_combo);
+CLP_CVT_XX(time_t,      time_t,     0,          LONG_MAX,   clp_suftab_time_t);
 
 
 /* Return true if the two specified options are mutually exclusive.
@@ -369,7 +432,7 @@ clp_excludes2(const clp_option_t *l, const clp_option_t *r)
 }
 
 /* Return the opt letter of any option that is mutually exclusive
- * with the specified option and was appeared on the command line
+ * with the specified option and which appeared on the command line
  * at least the specified number of times.
  */
 clp_option_t *
@@ -427,7 +490,26 @@ clp_unbracket(const char *name, char *buf, size_t bufsz)
     return nbrackets;
 }
 
-/* Print lines of the form "usage: progname [options] args...".
+/* Lexical string comparator for qsort (e.g., AaBbCcDd...)
+ */
+static int
+clp_string_cmp(const void *lhs, const void *rhs)
+{
+    const char *l = (const char *)lhs;
+    const char *r = (const char *)rhs;
+
+    int lc = tolower(*l);
+    int rc = tolower(*r);
+
+    if (lc == rc) {
+        return (isupper(*l) ? -1 : 1);
+    }
+
+    return (lc - rc);
+}
+
+/* Print just the usage line, i.e., lines of the general form
+ *   "usage: progname [options] args..."
  */
 void
 clp_usage(clp_t *clp, const clp_option_t *limit, FILE *fp)
@@ -456,8 +538,8 @@ clp_usage(clp_t *clp, const clp_option_t *limit, FILE *fp)
 
     /* Build three lists of option characters:
      *
-     * 1) excludes_buf[] contains all the options that might exclude or be
-     * excluded by another option.
+     * 1) excludes_buf[] contains all the options that might exclude
+     * or be excluded by another option.
      *
      * 2) optarg_buf[] contains all the options not in (1) that require
      * an argument.
@@ -494,6 +576,10 @@ clp_usage(clp_t *clp, const clp_option_t *limit, FILE *fp)
     *pc_optarg = '\000';
     *pc_opt = '\000';
 
+    qsort(opt_buf, strlen(opt_buf), 1, clp_string_cmp);
+    qsort(optarg_buf, strlen(optarg_buf), 1, clp_string_cmp);
+    qsort(excludes_buf, strlen(excludes_buf), 1, clp_string_cmp);
+
     dprint(1, "option -%c:\n", limit ? limit->optopt : '?');
     dprint(1, "  excludes: %s\n", excludes_buf);
     dprint(1, "  optarg:   %s\n", optarg_buf);
@@ -501,17 +587,24 @@ clp_usage(clp_t *clp, const clp_option_t *limit, FILE *fp)
 
     /* Now print out the usage line in the form of:
      *
-     * usage: basename [mandatory-opt] [bool-opts] [opts-with-args] [exclusive-opts] [parameters...]
+     * usage: basename [mandatory-opt] [bool-opts] [opts-with-args] [excl-opts] [posparams...]
+     */
+
+    /* [mandatory-opt]
      */
     fprintf(fp, "usage: %s", clp->basename);
     if (limit) {
         fprintf(fp, " -%c", limit->optopt);
     }
 
+    /* [bool-opts]
+     */
     if (opt_buf[0]) {
         fprintf(fp, " [-%s]", opt_buf);
     }
 
+    /* [opts-with-args]
+     */
     for (pc = optarg_buf; *pc; ++pc) {
         clp_option_t *o = clp_option_find(clp->optionv, *pc);
 
@@ -521,97 +614,101 @@ clp_usage(clp_t *clp, const clp_option_t *limit, FILE *fp)
     }
 
     /* Generate the mutually exclusive option usage message...
+     * [excl-args]
      */
-    char *listv[clp->optionc + 1];
-    int listc = 0;
-    char *cur;
-    int i;
+    if (excludes_buf[0]) {
+        char *listv[clp->optionc + 1];
+        int listc = 0;
+        char *cur;
+        int i;
 
-    /* Build a vector of strings where each string contains
-     * mutually exclusive options.
-     */
-    for (cur = excludes_buf; *cur; ++cur) {
-        clp_option_t *l = clp_option_find(clp->optionv, *cur);
-        char buf[1024], *pc_buf;
+        /* Build a vector of strings where each string contains
+         * mutually exclusive options.
+         */
+        for (cur = excludes_buf; *cur; ++cur) {
+            clp_option_t *l = clp_option_find(clp->optionv, *cur);
+            char buf[1024], *pc_buf;
 
-        pc_buf = buf;
+            pc_buf = buf;
 
-        for (pc = excludes_buf; *pc; ++pc) {
-            if (cur == pc) {
-                *pc_buf++ = *pc;
-            } else {
-                clp_option_t *r = clp_option_find(clp->optionv, *pc);
-
-                if (clp_excludes2(l, r)) {
+            for (pc = excludes_buf; *pc; ++pc) {
+                if (cur == pc) {
                     *pc_buf++ = *pc;
+                } else {
+                    clp_option_t *r = clp_option_find(clp->optionv, *pc);
+
+                    if (clp_excludes2(l, r)) {
+                        *pc_buf++ = *pc;
+                    }
                 }
             }
+
+            *pc_buf = '\000';
+
+            listv[listc++] = strdup(buf);
         }
 
-        *pc_buf = '\000';
+        /* Eliminate duplicate strings.
+         */
+        for (i = 0; i < listc; ++i) {
+            int j;
 
-        listv[listc++] = strdup(buf);
-    }
-
-    /* Eliminate duplicate strings.
-     */
-    for (i = 0; i < listc; ++i) {
-        int j;
-
-        for (j = i + 1; j < listc; ++j) {
-            if (listv[i] && listv[j]) {
-                if (0 == strcmp(listv[i], listv[j])) {
-                    free(listv[j]);
-                    listv[j] = NULL;
-                }
-            }
-        }
-    }
-
-    /* Ensure that all options within a list are mutually exclusive.
-     */
-    for (i = 0; i < listc; ++i) {
-        if (listv[i]) {
-            for (pc = listv[i]; *pc; ++pc) {
-                clp_option_t *l = clp_option_find(clp->optionv, *pc);
-                char *pc2;
-
-                for (pc2 = listv[i]; *pc2; ++pc2) {
-                    if (pc2 != pc) {
-                        clp_option_t *r = clp_option_find(clp->optionv, *pc2);
-
-                        if (!clp_excludes2(l, r)) {
-                            free(listv[i]);
-                            listv[i] = NULL;
-                            goto next;
-                        }
+            for (j = i + 1; j < listc; ++j) {
+                if (listv[i] && listv[j]) {
+                    if (0 == strcmp(listv[i], listv[j])) {
+                        free(listv[j]);
+                        listv[j] = NULL;
                     }
                 }
             }
         }
 
-    next:
-        continue;
-    }
+        /* Ensure that all options within a list are mutually exclusive.
+         */
+        for (i = 0; i < listc; ++i) {
+            if (listv[i]) {
+                for (pc = listv[i]; *pc; ++pc) {
+                    clp_option_t *l = clp_option_find(clp->optionv, *pc);
+                    char *pc2;
 
-    /* Now, print out the remaining strings of mutually exclusive options.
-     */
-    for (i = 0; i < listc; ++i) {
-        if (listv[i]) {
-            char *bar = "";
+                    for (pc2 = listv[i]; *pc2; ++pc2) {
+                        if (pc2 != pc) {
+                            clp_option_t *r = clp_option_find(clp->optionv, *pc2);
 
-            fprintf(fp, " [");
-
-            for (pc = listv[i]; *pc; ++pc) {
-                fprintf(fp, "%s-%c", bar, *pc);
-                bar = " | ";
+                            if (!clp_excludes2(l, r)) {
+                                free(listv[i]);
+                                listv[i] = NULL;
+                                goto next;
+                            }
+                        }
+                    }
+                }
             }
 
-            fprintf(fp, "]");
+          next:
+            continue;
+        }
+
+        /* Now, print out the remaining strings of mutually exclusive options.
+         */
+        for (i = 0; i < listc; ++i) {
+            if (listv[i]) {
+                char *bar = "";
+
+                fprintf(fp, " [");
+
+                for (pc = listv[i]; *pc; ++pc) {
+                    fprintf(fp, "%s-%c", bar, *pc);
+                    bar = " | ";
+                }
+
+                fprintf(fp, "]");
+            }
         }
     }
 
     /* Finally, print out all the positional parameters.
+     * [posparams...]
      */
     if (paramv) {
         int noptional = 0;
@@ -646,17 +743,19 @@ clp_usage(clp_t *clp, const clp_option_t *limit, FILE *fp)
     fprintf(fp, "\n");
 }
 
+/* Lexical option comparator for qsort (e.g., AaBbCcDd...)
+ */
 static int
 clp_help_cmp(const void *lhs, const void *rhs)
 {
-    clp_option_t * const *l = lhs;
-    clp_option_t *const *r = rhs;
+    clp_option_t const *l = *(clp_option_t * const *)lhs;
+    clp_option_t const *r = *(clp_option_t * const *)rhs;
 
-    int lc = isupper((*l)->optopt) ? tolower((*l)->optopt) : (*l)->optopt;
-    int rc = isupper((*r)->optopt) ? tolower((*r)->optopt) : (*r)->optopt;
+    int lc = tolower(l->optopt);
+    int rc = tolower(r->optopt);
 
     if (lc == rc) {
-        return (isupper((*l)->optopt) ? -1 : 1);
+        return (isupper(l->optopt) ? -1 : 1);
     }
 
     return (lc - rc);
@@ -870,13 +969,19 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
     clp_option_t *o;
     int posmin;
     int posmax;
+    char *env;
     char *pc;
     int rc;
 
+    env = getenv("CLP_DEBUG");
+    if (env) {
+        clp_debug = strtol(env, NULL, 0);
+    }
+
     clp->longopts = calloc(clp->optionc + 1, sizeof(*clp->longopts));
     if (!clp->longopts) {
-        clp_eprint(clp, "%s: unable to calloc longopts (%zu bytes)",
-                   __func__, sizeof(*clp->longopts) * (clp->optionc + 1));
+        eprint(clp, "+%d %s: unable to calloc longopts (%zu bytes)",
+               __LINE__, __FILE__, sizeof(*clp->longopts) * (clp->optionc + 1));
         return EX_OSERR;
     }
     longopt = clp->longopts;
@@ -885,8 +990,8 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
 
     clp->optstring = calloc(1, optstringsz);
     if (!clp->optstring) {
-        clp_eprint(clp, "%s: unable to calloc optstring (%zu bytes)",
-                   __func__, optstringsz);
+        eprint(clp, "+%d %s: unable to calloc optstring (%zu bytes)",
+               __LINE__, __FILE__, optstringsz);
         return EX_OSERR;
     }
 
@@ -941,8 +1046,11 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
     /* Reset getopt_long().
      * TODO: Create getopt_long_r() for MT goodness.
      */
-    optreset = 1;
-    optind = 1;
+#ifdef optreset
+    optreset = 1; // FreeBSD
+#else
+    optind = 1; // GNU
+#endif
 
     while (1) {
         int curind = optind;
@@ -955,10 +1063,10 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
         if (-1 == c) {
             break;
         } else if ('?' == c) {
-            clp_eprint(clp, "invalid option %s%s", argv[curind], usehelp);
+            eprint(clp, "invalid option %s%s", argv[curind], usehelp);
             return EX_USAGE;
         } else if (':' == c) {
-            clp_eprint(clp, "option %s requires a parameter%s", argv[curind], usehelp);
+            eprint(clp, "option %s requires a parameter%s", argv[curind], usehelp);
             return EX_USAGE;
         }
 
@@ -967,7 +1075,8 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
          */
         o = clp_option_find(clp->optionv, c);
         if (!o) {
-            clp_eprint(clp, "%s: program error: unexpected option %s", __func__, argv[curind]);
+            eprint(clp, "+%d %s: program error: unexpected option %s",
+                   __LINE__, __FILE__, argv[curind]);
             return EX_SOFTWARE;
         }
 
@@ -975,7 +1084,7 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
          */
         x = clp_excludes(clp->optionv, o, 1);
         if (x) {
-            clp_eprint(clp, "option -%c excludes -%c%s", x->optopt, c, usehelp);
+            eprint(clp, "option -%c excludes -%c%s", x->optopt, c, usehelp);
             return EX_USAGE;
         }
 
@@ -1000,12 +1109,12 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
             if (rc) {
                 char optbuf[] = { o->optopt, '\000' };
 
-                clp_eprint(clp, "unable to convert '%s%s %s'%s%s",
-                           (longidx >= 0) ? "--" : "-",
-                           (longidx >= 0) ? o->longopt : optbuf,
-                           optarg,
-                           errno ? ": " : "",
-                           errno ? strerror(errno) : "");
+                eprint(clp, "unable to convert '%s%s %s'%s%s",
+                       (longidx >= 0) ? "--" : "-",
+                       (longidx >= 0) ? o->longopt : optbuf,
+                       optarg,
+                       errno ? ": " : "",
+                       errno ? strerror(errno) : "");
 
                 return rc;
             }
@@ -1029,10 +1138,10 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
         clp_posparam_minmax(paramv, &posmin, &posmax);
 
         if (argc < posmin) {
-            clp_eprint(clp, "mandatory positional parameters required%s", usehelp);
+            eprint(clp, "mandatory positional parameters required%s", usehelp);
             return EX_USAGE;
         } else if (argc > posmax) {
-            clp_eprint(clp, "extraneous positional parameters detected%s", usehelp);
+            eprint(clp, "extraneous positional parameters detected%s", usehelp);
             return EX_USAGE;
         }
     }
@@ -1118,24 +1227,59 @@ clp_parsev_impl(clp_t *clp, int argc, char **argv, int *optindp)
     return 0;
 }
 
+/* Like clp_parsev(), but takes a string instead of a vector.
+ * Uses strsep() to break the line up by the given delimiters.
+ */
+int
+clp_parsel(const char *line, const char *delim,
+           clp_option_t *optionv, clp_posparam_t *paramv,
+           char *errbuf, size_t errbufsz)
+{
+    char **argv;
+    int optind;
+    int argc;
+    int rc;
+
+    rc = clp_breakargs(line, delim, errbuf, errbufsz, &argc, &argv);
+    if (rc)
+        return rc;
+
+    rc = clp_parsev(argc, argv, optionv, paramv, errbuf, errbufsz, &optind);
+
+    free(argv);
+
+    return rc;
+}
+
+/* Parse a vector of strings as specified by the given option and
+ * param vectors (either or both which may be nil).
+ *
+ * If successful, returns zero and if optindp is not nil returns
+ * the index into argv[] at which processng stopped.
+ *
+ * On error, returns a suggested exit code from sysexits.h, and
+ * an error message in errbuf.  If errbuf is nil, prints the error
+ * message to stderr.
+ */
 int
 clp_parsev(int argc, char **argv,
            clp_option_t *optionv, clp_posparam_t *paramv,
-           char *errbuf, int *optindp)
+           char *errbuf, size_t errbufsz, int *optindp)
 {
     char _errbuf[128];
     clp_t clp;
     int rc;
 
-    if (argc < 1) {
+    if (argc < 1)
         return 0;
-    }
 
     memset(&clp, 0, sizeof(clp));
 
     clp.optionv = optionv;
     clp.paramv = paramv;
-    clp.errbuf = errbuf ? errbuf : _errbuf;
+
+    clp.errbuf = errbuf ?: _errbuf;
+    clp.errbufsz = errbuf ? errbufsz : sizeof(_errbuf);
 
     clp.basename = __func__;
     if (argc > 0) {
@@ -1158,14 +1302,14 @@ clp_parsev(int argc, char **argv,
             }
 
             if (o->argname && !o->convert) {
-                clp_eprint(&clp, "%s: option -%c requires an argument"
-                           " but has no conversion function", __func__, o->optopt);
+                eprint(&clp, "option -%c requires an argument"
+                       " but has no conversion function", o->optopt);
                 return EX_DATAERR;
             }
 
             if (o->convert && !o->cvtdst) {
-                clp_eprint(&clp, "%s: option -%c has a conversion function "
-                           "but no cvtdst ptr", __func__, o->optopt);
+                eprint(&clp, "option -%c has a conversion function but no cvtdst ptr",
+                       o->optopt);
                 return EX_DATAERR;
             }
 
@@ -1184,8 +1328,8 @@ clp_parsev(int argc, char **argv,
 
         for (param = paramv; param->name > 0; ++param) {
             if (param->convert && !param->cvtdst) {
-                clp_eprint(&clp, "%s: parameter %s has a conversion function "
-                           "but no cvtdst ptr", __func__, param->name);
+                eprint(&clp, "parameter %s has a conversion function but no cvtdst ptr",
+                       param->name);
                 return EX_DATAERR;
             }
 
@@ -1208,13 +1352,51 @@ clp_parsev(int argc, char **argv,
     return rc;
 }
 
-/* Create a vector of strings from src broken up by spaces.
- * Spaces between arguments are elided.
+/* Create a vector of strings from words in src.
+ *
+ * Words are delimited by any character from delim (or isspace()
+ * if delim is nil) and delimiters are elided.  Delimiters that are
+ * escaped by a backslash and/or occur within quoted strings lose
+ * their significance as delimiters and hence are retained with the
+ * word in which they appear.
+ *
+ * If sep is nil, then all whitespace between words is elided, which
+ * is to say that zero-length strings between delimiters are always
+ * elided.  If sep is not nil, then zero-length strings between
+ * delimiters are always preserved.
+ *
+ * For example:
+ *
+ *    src = :one\, two,, , "four,five" :
+ *    delim = ,:
+ *
+ *    argc = 6;
+ *    argv[0] = ""
+ *    argv[1] = "one two"
+ *    argv[2] = ""
+ *    argv[3] = " "
+ *    argv[4] = " four,five "
+ *    argv[5] = ""
+ *    argv[6] = NULL
+ *
+ * On success, argc and argv are returned via *argcp and *argvp
+ * respectively if not nil, and argv[argc] is always set to NULL.
+ * If argvp is not nil then *argvp must always be freed by the
+ * caller, even if *argcp is zero.
+ *
+ * On failue, errno is set and an exit code from sysexits.h
+ * is returned.  *argvp is not set and must not be freed
+ * in this case.
+ *
+ * Note:  If delim is nil, then all white space surrounding
+ * each word is elided.
  */
 int
-clp_breakargs(const char *src, const char *sep, char *errbuf, int *argcp, char ***argvp)
+clp_breakargs(const char *src, const char *delim,
+              char *errbuf, size_t errbufsz,
+              int *argcp, char ***argvp)
 {
-    char _errbuf[CLP_ERRBUFSZ];
+    char _errbuf[128];
     bool backslash = false;
     bool dquote = false;
     bool squote = false;
@@ -1226,70 +1408,108 @@ clp_breakargs(const char *src, const char *sep, char *errbuf, int *argcp, char *
     char *dst;
     int argc;
 
+    errbufsz = errbuf ? errbufsz : sizeof(_errbuf);
     errbuf = errbuf ?: _errbuf;
 
     if (!src) {
-        snprintf(errbuf, CLP_ERRBUFSZ, "%s: invalid input: src may not be NULL", __func__);
+        snprintf(errbuf, errbufsz, "+%d %s: src may not be NULL", __LINE__, __FILE__);
+        errno = EINVAL;
         return EX_SOFTWARE;
     }
 
-    srclen = strlen(src);
-    argcmax = (srclen / 2) + 1;
-
-    /* Allocate enough space to hold the maximum needed pointers
-     * plus the entire source string.  This will generally waste
+    /* Allocate enough space to hold the maximum needed pointers plus
+     * a copy of the entire source string.  This will generally waste
      * a bit of space, but it greatly simplifies cleanup.
      */
+    srclen = strlen(src);
+    argcmax = (srclen / 2) + 3;
     argvsz = sizeof(*argv) * argcmax + (srclen + 1);
 
     argv = malloc(argvsz);
     if (!argv) {
-        snprintf(errbuf, CLP_ERRBUFSZ, "%s: unable to allocate %zu bytes",
-                 __func__, argvsz);
-        return ENOMEM;
+        snprintf(errbuf, errbufsz, "+%d %s: unable to allocate %zu bytes",
+                 __LINE__, __FILE__, argvsz);
+        errno = ENOMEM;
+        return EX_OSERR;
     }
 
     dst = (char *)(argv + argcmax);
     prev = dst;
     argc = 0;
 
-    while (*src) {
+    while (1) {
         if (backslash) {
             backslash = false;
-            *dst++ = *src;
-        } else if (*src == '\\') {
+
+            /* TODO: Not sure if we should convert printf escapes
+             * or leave them unconverted in dst.
+             */
+            switch (*src) {
+            case 'a': *dst++ = '\a'; break;
+            case 'b': *dst++ = '\b'; break;
+            case 'f': *dst++ = '\f'; break;
+            case 'n': *dst++ = '\n'; break;
+            case 'r': *dst++ = '\r'; break;
+            case 't': *dst++ = '\t'; break;
+            case 'v': *dst++ = '\v'; break;
+
+            default:
+                if (isdigit(*src)) {
+                    char *end;
+
+                    *dst++ = strtoul(src, &end, 8); // TODO: Test me...
+                    src = end;
+                    continue;
+                }
+
+                *dst++ = *src;
+                break;
+            }
+        }
+        else if (*src == '\\') {
             backslash = true;
-        } else if (*src == '"') {
+        }
+        else if (*src == '"') {
             if (squote) {
                 *dst++ = *src;
             } else {
                 dquote = !dquote;
             }
-        } else if (*src == '\'') {
+        }
+        else if (*src == '\'') {
             if (dquote) {
                 *dst++ = *src;
             } else {
                 squote = !squote;
             }
-        } else if (dquote || squote) {
+        }
+        else if (dquote || squote) {
             *dst++ = *src;
-        } else if ((!sep && isspace(*src)) || (sep && strchr(sep, *src))) {
+        }
+        else if (!delim && (!*src || isspace(*src))) {
             if (dst > prev) {
                 argv[argc++] = prev;
                 *dst++ = '\000';
                 prev = dst;
             }
+            // else elides leading whitespace and NUL characters...
+        } else if (delim && strchr(delim, *src)) {
+            argv[argc++] = prev;
+            *dst++ = '\000';
+            prev = dst;
         } else {
             *dst++ = *src;
         }
 
-        ++src;
+        if (!*src++)
+            break;
     }
 
     if (dquote || squote) {
-        snprintf(errbuf, CLP_ERRBUFSZ, "%s: unterminated %s quote",
-                 __func__, dquote ? "double" : "single");
+        snprintf(errbuf, errbufsz, "unterminated %s quote",
+                 dquote ? "double" : "single");
         free(argv);
+        errno = EINVAL;
         return EX_DATAERR;
     }
 
@@ -1297,6 +1517,8 @@ clp_breakargs(const char *src, const char *sep, char *errbuf, int *argcp, char *
         argv[argc++] = prev;
         *dst++ = '\000';
     }
+
+    argv[argc] = NULL;
 
     if (argcp) {
         *argcp = argc;
@@ -1308,26 +1530,4 @@ clp_breakargs(const char *src, const char *sep, char *errbuf, int *argcp, char *
     }
 
     return 0;
-}
-
-int
-clp_parsel(const char *line, clp_option_t *optionv, clp_posparam_t *paramv, char *errbuf)
-{
-    char **argv;
-    int optind;
-    int argc;
-    int rc;
-    int i;
-
-    rc = clp_breakargs(line, NULL, errbuf, &argc, &argv);
-    if (!rc) {
-        for (i = 0; i < argc; ++i) {
-            printf("%d %s\n", i, argv[i]);
-        }
-        rc = clp_parsev(argc, argv, optionv, paramv, errbuf, &optind);
-    }
-
-    free(argv);
-
-    return rc;
 }

@@ -29,8 +29,6 @@
 
 #include <sys/types.h>
 
-#define CLP_ERRBUFSZ        (128)
-
 #define CLP_OPTION_END      { .optopt = 0 }
 #define CLP_PARAM_END       { .name = NULL }
 
@@ -117,16 +115,6 @@
 
 
 
-/* By default dprint() and eprint() print to stderr.  You can change that
- * behavior by simply setting these variables to a different stream.
- */
-extern FILE *clp_dprint_fp;
-extern FILE *clp_eprint_fp;
-extern FILE *clp_vprint_fp;
-
-extern void clp_printf(FILE *fp , const char *file, int line, const char *fmt, ...);
-
-
 struct clp_s;
 struct clp_option_s;
 struct clp_posparam_s;
@@ -191,18 +179,19 @@ typedef struct clp_s {
     struct option      *longopts;       // Table of long options for getopt_long()
     int                 opthelp;        // The option tied to opt_help()
     char               *errbuf;
+    size_t              errbufsz;
 } clp_t;
 
 
-/* Declare a vector.
+/* Declare a type-specific vector.
  */
 #define CLP_VECTOR_DECL(_xname, _xtype, _xsize)                         \
     struct _xname {                                                     \
         u_int            len;                                           \
         u_int            size;                                          \
-        const char     *delim;                                          \
-        void           *priv;                                           \
-        _xtype          data[(_xsize)];                                 \
+        const char      *delim;                                         \
+        void            *priv;                                          \
+        _xtype           data[(_xsize)];                                \
     }
 
 /* Declare, define, and initialize a vector.
@@ -280,14 +269,19 @@ extern clp_cvt_t clp_cvt_time_t;
 extern clp_option_cb_t clp_help;
 extern clp_option_cb_t clp_version;
 
+extern int clp_breakargs(const char *src, const char *delim,
+                         char *errbuf, size_t errbufsz,
+                         int *argcp, char ***argvp);
+
 extern int clp_parsev(int argc, char **argv,
                       clp_option_t *optionv,
                       clp_posparam_t *paramv,
-                      char *errbuf, int *optindp);
+                      char *errbuf, size_t errbufsz,
+                      int *optindp);
 
-extern int clp_parsel(const char *line,
+extern int clp_parsel(const char *line, const char *delim,
                       clp_option_t *optionv,
                       clp_posparam_t *paramv,
-                      char *errbuf);
+                      char *errbuf, size_t errbufsz);
 
 #endif /* CLP_H */

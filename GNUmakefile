@@ -1,4 +1,4 @@
-# Copyright (c) 2011,2014-2015 Greg Becker.  All rights reserved.
+# Copyright (c) 2011,2014-2017 Greg Becker.  All rights reserved.
 #
 # $Id: GNUmakefile 393 2016-04-14 09:21:59Z greg $
 
@@ -33,11 +33,11 @@ VPATH	:=
 # You probably don't need to change anything below this line.
 
 
-VERSION		:= $(shell git describe --abbrev=4 --dirty --always --tags)
+NCT_VERSION	:= $(shell git describe --abbrev=4 --dirty --always --tags)
 
 INCLUDE 	:= -I. -I../lib -I../../src/include
 CFLAGS 		+= -Wall -g -O2 ${INCLUDE}
-CDEFS 		:= -DVERSION=\"${VERSION}\"
+CDEFS 		:= -DNCT_VERSION=\"${NCT_VERSION}\"
 DEBUG 		:= -g -O0 -DDEBUG -UNDEBUG
 CPPFLAGS	:= ${CDEFS}
 OBJ		:= ${SRC:.c=.o}

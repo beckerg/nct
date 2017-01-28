@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 Greg Becker.  All rights reserved.
+ * Copyright (c) 2015-2017 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -83,12 +83,12 @@ given(int c)
 void *
 test_getattr_init(int argc, char **argv, int duration, start_t **startp, char **rhostpathp)
 {
-    char errbuf[CLP_ERRBUFSZ];
     test_getattr_priv_t *priv;
+    char errbuf[128];
     int optind;
     int rc;
 
-    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, &optind);
+    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, sizeof(errbuf), &optind);
     if (rc) {
         eprint("%s\n", errbuf);
         exit(rc);
@@ -139,7 +139,7 @@ test_getattr_cb(nct_req_t *req)
     }
 
     XDR_DESTROY(&req->req_msg->msg_xdr);
-    
+
     if (req->req_tsc_stop >= req->req_tsc_finish) {
         nct_req_free(req);
         return ETIMEDOUT;
