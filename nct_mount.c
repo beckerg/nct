@@ -116,36 +116,39 @@ nct_mount(const char *path, in_port_t port)
     mnt = calloc(1, mntsz);
     if (!mnt) {
         eprint("calloc(%zu) failed\n", mntsz);
-        abort();
+        exit(EX_OSERR);
     }
 
     strlcpy(mnt->mnt_args, path, pathlen + 1);
+
+    mnt->mnt_server = mnt->mnt_args;
+    mnt->mnt_user = "root";
+    mnt->mnt_port = port;
+    mnt->mnt_path = "/";
+    mnt->mnt_fd = -1;
 
     pc = strchr(mnt->mnt_args, '@');
     if (pc) {
         mnt->mnt_user = mnt->mnt_args;
         *pc++ = '\000';
         mnt->mnt_server = pc;
-    } else {
-        mnt->mnt_user = "root";
-        mnt->mnt_server = mnt->mnt_args;
     }
 
     pc = strchr(mnt->mnt_server, ':');
     if (pc) {
         *pc++ = '\000';
         mnt->mnt_path = pc;
-    } else {
-        mnt->mnt_path = "/";
     }
 
-    mnt->mnt_fd = -1;
-    mnt->mnt_port = port;
+    if (!isalpha(mnt->mnt_server[0]) && !isdigit(mnt->mnt_server[0])) {
+        eprint("invalid host name %s\n", mnt->mnt_server);
+        exit(EX_NOHOST);
+    }
 
     gethostname(mnt->mnt_hostname, sizeof(mnt->mnt_hostname));
 
     mnt->mnt_faddr.sin_family = AF_INET;
-    mnt->mnt_faddr.sin_port = htons(2049);
+    mnt->mnt_faddr.sin_port = htons(mnt->mnt_port);
 
     hent = gethostbyname(mnt->mnt_server);
     if (!hent) {
@@ -167,7 +170,6 @@ nct_mount(const char *path, in_port_t port)
 
     mnt->mnt_serverip[sizeof(mnt->mnt_serverip) - 1] = '\000';
     mnt->mnt_faddr.sin_addr.s_addr = inet_addr(mnt->mnt_serverip);
-
 
     mnt->mnt_auth = authunix_create(mnt->mnt_hostname, geteuid(), getegid(), 0, NULL);
     if (!mnt->mnt_auth) {

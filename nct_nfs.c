@@ -118,7 +118,7 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
         rc = setsockopt(fd, IPPROTO_IP, IP_PORTRANGE, &opt, sizeof(opt));
 #endif
     }
- 
+
     rc = connect(fd, (struct sockaddr *)&faddr, sizeof(struct sockaddr_in));
     if (rc) {
         eprint("connect(%d, ...) failed: %s\n", fd, strerror(errno));
@@ -166,7 +166,27 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
         eprint("mount %s:%s failed: %d %s\n",
                mnt->mnt_server, mnt->mnt_path,
                mntres.fhs_status, strerror_mountstat3(mntres.fhs_status));
-        abort();
+
+        switch (mntres.fhs_status) {
+        case MNT3ERR_PERM:
+        case MNT3ERR_ACCES:
+            exit(EX_NOPERM);
+
+        case MNT3ERR_IO:
+            exit(EX_IOERR);
+
+        case MNT3ERR_NOENT:
+        case MNT3ERR_NOTDIR:
+        case MNT3ERR_INVAL:
+        case MNT3ERR_NAMETOOLONG:
+            exit(EX_DATAERR);
+
+        default:
+            exit(EX_PROTOCOL);
+            break;
+        }
+
+        exit(EX_OSERR);
     }
 
     XDR_DESTROY(&xdr);
