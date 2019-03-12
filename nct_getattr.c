@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 Greg Becker.  All rights reserved.
+ * Copyright (c) 2015-2017,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -56,7 +56,8 @@ static clp_posparam_t posparamv[] = {
     {
         .name = "rhostpath",
         .help = "[user@]rhost:path",
-        .convert = clp_cvt_string, .cvtdst = &rhostpath,
+        .convert = clp_cvt_string,
+        .cvtdst = &rhostpath,
     },
 
     { .name = NULL }
@@ -172,7 +173,7 @@ test_getattr_start(void *arg)
         }
     }
 
-    dprint(2, "exiting...", strerror(rc));
+    dprint(2, "exiting: %s", strerror(rc));
 
     nct_worker_exit(mnt);
 

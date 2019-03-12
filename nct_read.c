@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 Greg Becker.  All rights reserved.
+ * Copyright (c) 2015-2017,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,20 +52,22 @@ typedef struct {
     int     pr_duration;
 } test_read_priv_t;
 
-static size_t length = 1024 * 64;
+static size_t length = 512;
 static char *rhostpath;
 
 static clp_posparam_t posparamv[] = {
     {
         .name = "rhostpath",
         .help = "[user@]rhost:path",
-        .convert = clp_cvt_string, .cvtdst = &rhostpath,
+        .convert = clp_cvt_string,
+        .cvtdst = &rhostpath,
     },
 
     {
         .name = "[length]",
         .help = "read length (in bytes)",
-        .convert = clp_cvt_u_long, .cvtdst = &length,
+        .convert = clp_cvt_u_long,
+        .cvtdst = &length,
     },
 
     CLP_PARAM_END
@@ -182,7 +184,7 @@ test_read_start(void *arg)
     offset = __sync_fetch_and_add(&priv->pr_offset, priv->pr_length);
 
     if (offset + priv->pr_length > vn->xvn_fattr.size) {
-        eprint("file smaller than request length: size=%lu length=%u\n",
+        eprint("file smaller than request length: size=%lu length=%zu\n",
                vn->xvn_fattr.size, priv->pr_length);
         nct_worker_exit(mnt);
         return NULL;
@@ -198,7 +200,7 @@ test_read_start(void *arg)
         }
     }
 
-    dprint(2, "exiting...", strerror(rc));
+    dprint(2, "exiting: %s\n", strerror(rc));
 
     nct_worker_exit(mnt);
 

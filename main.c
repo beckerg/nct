@@ -195,13 +195,13 @@ main(int argc, char **argv)
     if (outdir) {
         rc = mkdir(outdir, 0755);
         if (rc && errno != EEXIST) {
-            eprint("mkdir(%s) failed: %s\n", strerror(errno));
+            eprint("mkdir(%s) failed: %s\n", outdir, strerror(errno));
             exit(EX_OSERR);
         }
 
         rc = chdir(outdir);
         if (rc) {
-            eprint("chdir(%s) failed: %s\n", strerror(errno));
+            eprint("chdir(%s) failed: %s\n", outdir, strerror(errno));
             exit(EX_OSERR);
         }
     }
@@ -237,7 +237,7 @@ main(int argc, char **argv)
 
     mnt = nct_mount(rhostpath, port);
     if (!mnt) {
-        eprint("%s: mount %s failed\n", rhostpath);
+        eprint("mount %s failed\n", rhostpath);
         abort();
     }
 

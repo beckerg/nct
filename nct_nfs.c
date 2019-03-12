@@ -136,7 +136,7 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
 
     cc = nct_rpc_send(fd, txbuf, txlen);
     if (cc != txlen) {
-        eprint("nct_rpc_send(%d, %p, %zu) failed: %s\n",
+        eprint("nct_rpc_send(%d, %p, %d) failed: %s\n",
                fd, txbuf, txlen, (cc == -1) ? strerror(errno) : "EOF");
         abort();
     }

@@ -156,7 +156,7 @@ nct_mount(const char *path, in_port_t port)
     }
 
     if (hent->h_addrtype != AF_INET) {
-        eprint("host %s does not have an AF_INET address: %s\n", mnt->mnt_server);
+        eprint("host %s does not have an AF_INET address\n", mnt->mnt_server);
         exit(EX_NOHOST);
     }
 
@@ -264,7 +264,7 @@ nct_mount(const char *path, in_port_t port)
                mnt->mnt_vn->xvn_fattr.size,
                mnt->mnt_vn->xvn_fattr.type);
 
-        dprint(1, "  Mode: (%03o/%s): (%u/%s)  Gid: (%u/%s)\n",
+        dprint(1, "  Mode: (%03lo/%s): (%lu/%s)  Gid: (%lu/%s)\n",
                mnt->mnt_vn->xvn_fattr.mode, "?",
                mnt->mnt_vn->xvn_fattr.uid, "?",
                mnt->mnt_vn->xvn_fattr.gid, "?");
@@ -272,7 +272,7 @@ nct_mount(const char *path, in_port_t port)
         dprint(1, "  Device: %u,%u  Inode: %lu  Links: %u\n",
                0, 0,
                mnt->mnt_vn->xvn_fattr.fileid,
-               mnt->mnt_vn->xvn_fattr.nlink);
+               (uint)mnt->mnt_vn->xvn_fattr.nlink);
 
     } else {
         eprint("getattr3 decode of %s:%s failed: %d\n",
@@ -327,6 +327,6 @@ nct_mnt_print(nct_mnt_t *mnt)
     dprint(1, "port     %u\n", mnt->mnt_port);
     dprint(1, "fd       %d\n", mnt->mnt_fd);
     dprint(1, "auth     %p\n", mnt->mnt_auth);
-    dprint(1, "send     %p\n", mnt->mnt_send_td);
-    dprint(1, "recv     %p\n", mnt->mnt_recv_td);
+    dprint(1, "send     %p\n", (void *)mnt->mnt_send_td);
+    dprint(1, "recv     %p\n", (void *)mnt->mnt_recv_td);
 }

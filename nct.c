@@ -92,13 +92,13 @@ nct_gplot(int nsamples, int sampersec, const char *term, const char *using,
 
     n = snprintf(file, sizeof(file), "%s.gnuplot", title);
     if (n >= sizeof(file)) {
-        eprint("title %s too long\n");
+        eprint("title %s too long\n", title);
         return;
     }
 
     fp = fopen(file, "w");
     if (!fp) {
-        eprint("fopen(%s) failed: %s\n", strerror(errno));
+        eprint("fopen(%s) failed: %s\n", file, strerror(errno));
         return;
     }
 
@@ -157,7 +157,7 @@ nct_gplot(int nsamples, int sampersec, const char *term, const char *using,
     snprintf(cmd, sizeof(cmd), "gnuplot %s", file);
     fp = popen(cmd, "r");
     if (!fp) {
-        eprint("[%s] failed: %s\n", strerror(errno));
+        eprint("[%s] failed: %s\n", cmd, strerror(errno));
         return;
     }
 
@@ -416,7 +416,7 @@ nct_stats_loop(nct_mnt_t *mnt, long duration, int mark,
         printf("\n%12s %12s %12s  %s\n", "MIN", "AVG", "MAX", "DESC");
 
         uint64_t requests_avg = (requests_tot * samples_per_sec) / samples_tot;
-        
+
         printf("%12lu %12lu %12lu  REQ/s (requests per second)\n",
                requests_min,
                requests_avg,

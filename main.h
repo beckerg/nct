@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2006,2011,2014-2016 Greg Becker.  All rights reserved.
+ * Copyright (c) 2001-2006,2011,2014-2016,2019 Greg Becker.  All rights reserved.
  */
 #ifndef NCT_MAIN_H
 #define NCT_MAIN_H
@@ -28,13 +28,14 @@ do {                                                                \
     }                                                               \
 } while (0);
 
-extern void dprint_func(int lvl, const char *func, int line, const char *fmt, ...);
+extern void dprint_func(int lvl, const char *func, int line, const char *fmt, ...)
+    __attribute__((format (printf, 4, 5)));
 
 
 /* You should call eprint() to print error messages that should always be shown.
  * It simply prints the given message preceded by the program name.
  */
-extern void eprint(const char *fmt, ...);
-
+extern void eprint(const char *fmt, ...)
+    __attribute__((format (printf, 1, 2)));
 
 #endif /* NCT_MAIN_H */
