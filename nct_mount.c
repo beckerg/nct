@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016 Greg Becker.  All rights reserved.
+ * Copyright (c) 2014-2016,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -41,7 +41,6 @@
 #include <limits.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <pthread_np.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>

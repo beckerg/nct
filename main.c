@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001-2006,2011,2014-2017 Greg Becker.  All rights reserved.
+ * Copyright (c) 2001-2006,2011,2014-2017,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -67,8 +67,8 @@ static char nct_version[] = NCT_VERSION;
 char *progname;
 int verbosity;
 
-FILE *dprint_stream;
-FILE *eprint_stream;
+FILE *dprint_fp;
+FILE *eprint_fp;
 
 unsigned int jobs = 1;
 in_port_t port = 2049;
@@ -128,8 +128,8 @@ main(int argc, char **argv)
     progname = strrchr(argv[0], '/');
     progname = (progname ? progname + 1 : argv[0]);
 
-    dprint_stream = stderr;
-    eprint_stream = stderr;
+    dprint_fp = stderr;
+    eprint_fp = stderr;
 
     initstate((u_long)time(NULL), state, sizeof(state));
 
@@ -267,16 +267,14 @@ dprint_func(int lvl, const char *func, int line, const char *fmt, ...)
     char msg[256];
     va_list ap;
 
-    msg[0] = '\000';
-
-    if (verbosity > 1)
-        snprintf(msg, sizeof(msg), "%s: %16s %4d:  ", progname, func, line);
-
     va_start(ap, fmt);
-    vsnprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), fmt, ap);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
 
-    fputs(msg, dprint_stream);
+    if (verbosity > 1)
+        fprintf(dprint_fp, "%s: %16s %4d:  %s", progname, func, line, msg);
+    else
+        fprintf(dprint_fp, "%s", msg);
 }
 
 
@@ -288,11 +286,9 @@ eprint(const char *fmt, ...)
     char msg[256];
     va_list ap;
 
-    snprintf(msg, sizeof(msg), "%s: ", progname);
-
     va_start(ap, fmt);
-    vsnprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), fmt, ap);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
 
-    fputs(msg, eprint_stream);
+    fprintf(eprint_fp, "%s: %s", progname, msg);
 }

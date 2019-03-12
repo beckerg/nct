@@ -306,7 +306,7 @@ clp_cvt_ ## _xsuffix(const char *optarg, int flags, void *parms, void *dst) \
                                                                         \
         if (errno) {                                                    \
             if (errno != ERANGE) {                                      \
-                *result = val;                                          \
+                *result = (_xtype)val;                                  \
                 break;                                                  \
             }                                                           \
             ++nrange;                                                   \
@@ -331,12 +331,14 @@ clp_cvt_ ## _xsuffix(const char *optarg, int flags, void *parms, void *dst) \
             val *= *(suftab->mult + (pc - suftab->list));               \
         }                                                               \
                                                                         \
-        if (rangechk && (val < (_xmin) || val > (_xmax))) {             \
+        if (isinf(val) || isnan(val))                                   \
+            ;                                                           \
+        else if (rangechk && (val < (_xmin) || val > (_xmax))) {        \
             val = (val < (_xmin)) ? (_xmin) : (_xmax);                  \
             ++nrange;                                                   \
         }                                                               \
                                                                         \
-        *result = val;                                                  \
+        *result = (_xtype)val;                                          \
     }                                                                   \
                                                                         \
     vector->len = n;                                                    \
@@ -370,8 +372,8 @@ CLP_CVT_XX(u_int,       u_int,      0,          UINT_MAX,   clp_suftab_combo);
 CLP_CVT_XX(long,        long,       LONG_MIN,   LONG_MAX,   clp_suftab_combo);
 CLP_CVT_XX(u_long,      u_long,     0,          ULONG_MAX,  clp_suftab_combo);
 
-CLP_CVT_XX(float,       float,      0,          0,          clp_suftab_combo);
-CLP_CVT_XX(double,      double,     0,          0,          clp_suftab_combo);
+CLP_CVT_XX(float,       float,      -FLT_MAX,   FLT_MAX,    clp_suftab_combo);
+CLP_CVT_XX(double,      double,     -DBL_MAX,   DBL_MAX,    clp_suftab_combo);
 
 CLP_CVT_XX(int8_t,      int8_t,     INT8_MIN,   INT8_MAX,   clp_suftab_combo);
 CLP_CVT_XX(uint8_t,     uint8_t,    0,          UINT8_MAX,  clp_suftab_combo);
@@ -1422,7 +1424,7 @@ clp_breakargs(const char *src, const char *delim,
      * a bit of space, but it greatly simplifies cleanup.
      */
     srclen = strlen(src);
-    argcmax = (srclen / 2) + 3;
+    argcmax = srclen + 2;
     argvsz = sizeof(*argv) * argcmax + (srclen + 1);
 
     argv = malloc(argvsz);

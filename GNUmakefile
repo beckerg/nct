@@ -32,12 +32,18 @@ VPATH	:=
 
 # You probably don't need to change anything below this line.
 
-
 NCT_VERSION	:= $(shell git describe --abbrev=4 --dirty --always --tags)
+PLATFORM	:= $(shell uname -s | tr 'a-z' 'A-Z')
 
 INCLUDE 	:= -I. -I../lib -I../../src/include
-CFLAGS 		+= -Wall -g -O2 ${INCLUDE}
 CDEFS 		:= -DNCT_VERSION=\"${NCT_VERSION}\"
+
+ifneq ($(wildcard /usr/local/include/tirpc/rpc/rpc.h),)
+	INCLUDE := -I/usr/local/tirpc ${INCLUDE}
+	CDEFS += -DHAVE_TIRPC
+endif
+
+CFLAGS 		+= -Wall -g -O2 ${INCLUDE}
 DEBUG 		:= -g -O0 -DDEBUG -UNDEBUG
 CPPFLAGS	:= ${CDEFS}
 OBJ		:= ${SRC:.c=.o}
@@ -105,7 +111,7 @@ ${OBJ}: GNUmakefile
 #
 .%.d: %.c
 	@set -e; rm -f $@; \
-	$(CC) -M $(CPPFLAGS) $< > $@.$$$$; \
+	$(CC) -M $(CPPFLAGS) ${INCLUDE} $< > $@.$$$$; \
 	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
 	rm -f $@.$$$$
 
