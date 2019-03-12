@@ -31,6 +31,10 @@
 #include "nct_vnode.h"
 #include "nct_req.h"
 
+#ifndef __aligned
+#define __aligned(_n)   __attribute__((__aligned__(_n)))
+#endif
+
 typedef struct nct_mnt_s {
     pthread_mutex_t     mnt_send_mtx;
     pthread_cond_t      mnt_send_cv;

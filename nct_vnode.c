@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015 Greg Becker.  All rights reserved.
+ * Copyright (c) 2014-2015,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -53,7 +53,7 @@ nct_vn_alloc(const fhandle3 *fh, const char *name, int namelen)
         xvn->xvn_parent = NULL;
         xvn->xvn_fh = *fh;
         xvn->xvn_namelen = namelen;
-        strlcpy(xvn->xvn_name, name, namelen + 1);
+        memcpy(xvn->xvn_name, name, namelen + 1);
     }
 
     return xvn;

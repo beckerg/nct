@@ -1,4 +1,4 @@
-# Copyright (c) 2011,2014-2017 Greg Becker.  All rights reserved.
+# Copyright (c) 2011,2014-2017,2019 Greg Becker.  All rights reserved.
 #
 # $Id: GNUmakefile 393 2016-04-14 09:21:59Z greg $
 
@@ -20,7 +20,8 @@ SRC	+= nct_read.c nct_getattr.c
 SRC	+= clp.c
 
 #LDLIBS	:= -lm -lpthread -lrt
-LDLIBS	:= -lthr
+#LDLIBS	:= -lthr
+LDLIBS	:= -lpthread
 
 VPATH	:=
 
@@ -38,9 +39,10 @@ PLATFORM	:= $(shell uname -s | tr 'a-z' 'A-Z')
 INCLUDE 	:= -I. -I../lib -I../../src/include
 CDEFS 		:= -DNCT_VERSION=\"${NCT_VERSION}\"
 
-ifneq ($(wildcard /usr/local/include/tirpc/rpc/rpc.h),)
-	INCLUDE := -I/usr/local/tirpc ${INCLUDE}
+ifneq ($(wildcard /usr/include/tirpc/rpc/rpc.h),)
+	INCLUDE := -I/usr/include/tirpc ${INCLUDE}
 	CDEFS += -DHAVE_TIRPC
+	LDLIBS += -ltirpc
 endif
 
 CFLAGS 		+= -Wall -g -O2 ${INCLUDE}

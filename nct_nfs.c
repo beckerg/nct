@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2016 Greg Becker.  All rights reserved.
+ * Copyright (c) 2014-2016,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -58,10 +58,6 @@
 static const char *
 strerror_mountstat3(enum mountstat3 stat)
 {
-    if (stat < sys_nerr) {
-        return strerror(stat);
-    }
-
     switch (stat) {
     case MNT3ERR_NOTSUPP:
         return "mnt3err_notsupp";
@@ -70,6 +66,8 @@ strerror_mountstat3(enum mountstat3 stat)
         return "mnt3err_serverfault";
 
     default:
+        if (stat < MNT3ERR_NOTSUPP)
+            return strerror(stat);
         break;
     }
 

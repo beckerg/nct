@@ -84,11 +84,18 @@ static void
 nct_gplot(int nsamples, int sampersec, const char *term, const char *using,
            const char *title, const char *xlabel, const char *ylabel, const char *color)
 {
-    char file[128], cmd[128];
+    char file[128];
+    char cmd[sizeof(file) + 32];
     time_t now;
     FILE *fp;
+    int n;
 
-    snprintf(file, sizeof(file), "%s.gnuplot", title);
+    n = snprintf(file, sizeof(file), "%s.gnuplot", title);
+    if (n >= sizeof(file)) {
+        eprint("title %s too long\n");
+        return;
+    }
+
     fp = fopen(file, "w");
     if (!fp) {
         eprint("fopen(%s) failed: %s\n", strerror(errno));
@@ -436,8 +443,8 @@ nct_stats_loop(nct_mnt_t *mnt, long duration, int mark,
          */
         //int scale = samples_per_sec;
         int scale = 1;
-        char ylabel[128];
-        char using[128];
+        char ylabel[256];
+        char using[256];
         char ydiv[128];
 
         if (scale == 1) {

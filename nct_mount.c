@@ -118,7 +118,7 @@ nct_mount(const char *path, in_port_t port)
         exit(EX_OSERR);
     }
 
-    strlcpy(mnt->mnt_args, path, pathlen + 1);
+    memcpy(mnt->mnt_args, path, pathlen + 1);
 
     mnt->mnt_server = mnt->mnt_args;
     mnt->mnt_user = "root";
