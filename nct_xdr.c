@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015 Greg Becker.  All rights reserved.
+ * Copyright (c) 2014-2015,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -52,7 +52,7 @@
 
 int
 nct_xdr_create(struct rpc_msg *rpc_msg, uint32_t proc, AUTH *auth,
-                xdrproc_t xdrproc, void *args, char *buf, int bufsz)
+               xdrproc_t xdrproc, void *args, char *buf, int bufsz)
 {
     XDR xdrs;
     long l;
@@ -81,7 +81,7 @@ nct_xdr_create(struct rpc_msg *rpc_msg, uint32_t proc, AUTH *auth,
 
     return rc;
 }
-                
+
 bool_t
 xdr_uint64(XDR *xdrs, uint64 *objp)
 {

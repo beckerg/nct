@@ -45,8 +45,8 @@ ifneq ($(wildcard /usr/include/tirpc/rpc/rpc.h),)
 	LDLIBS += -ltirpc
 endif
 
-CFLAGS 		+= -Wall -g -O2 ${INCLUDE}
-DEBUG 		:= -g -O0 -DDEBUG -UNDEBUG
+CFLAGS		+= -Wall -g -O2 ${INCLUDE}
+DEBUG		:= -O0 -DDEBUG -UNDEBUG -fno-omit-frame-pointer
 CPPFLAGS	:= ${CDEFS}
 OBJ		:= ${SRC:.c=.o}
 
@@ -64,10 +64,15 @@ CSCOPE_EXCLUDE	?= '^/usr/src/sys/(arm|i386|ia64|mips|powerpc|sparc64|sun4v|pc98|
 #
 .DELETE_ON_ERROR:
 
-.PHONY:	all clean clobber cscope tags etags debug
+.PHONY:	all asan clean clobber cscope debug etags tags
 
 
 all: ${PROG}
+
+asan: CFLAGS += ${DEBUG}
+asan: CFLAGS += -fsanitize=address -fsanitize=undefined
+asan: LDLIBS += -fsanitize=address -fsanitize=undefined
+asan: ${PROG}
 
 clean:
 	rm -f ${PROG} ${OBJ} *.core
@@ -89,7 +94,7 @@ cscope.files: GNUmakefile ${HDR} ${SRC}
 	fi
 	mv $@.tmp $@
 
-debug: CFLAGS+=${DEBUG}
+debug: CFLAGS += ${DEBUG}
 debug: ${PROG}
 
 tags etags: TAGS
