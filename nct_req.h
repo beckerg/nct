@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015 Greg Becker.  All rights reserved.
+ * Copyright (c) 2014-2015,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,8 +21,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $Id: nct_req.h 285 2015-01-02 15:06:17Z greg $
  */
 #ifndef NCT_REQ_H
 #define NCT_REQ_H
@@ -33,7 +31,7 @@
 
 /* TODO: Make this setable via the command line
  */
-#define NCT_MSGSZ_MAX      (1024 * 128)    // Max message size, including headers
+#define NCT_MSGSZ_MAX      (1024 * 1024)   // Max message size, including headers
 
 struct nct_mnt_s;
 struct nct_req_s;
