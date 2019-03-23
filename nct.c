@@ -109,7 +109,7 @@ nct_gplot(int nsamples, int sampersec, const char *term, const char *using,
 
     fprintf(fp, "set title \"%s\"\n", title);
     fprintf(fp, "set output '%s.%s'\n", title, term);
-    fprintf(fp, "set term %s size 3600,1200\n", term);
+    fprintf(fp, "set term %s size 3840,1280\n", term);
     fprintf(fp, "set size 1, 0.76\n");
     fprintf(fp, "set origin 0, 0.24\n");
     fprintf(fp, "set autoscale\n");

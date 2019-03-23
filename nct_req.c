@@ -120,7 +120,7 @@ nct_req_recv_loop(void *arg)
         int i;
 
         cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX);
-        if (cc <= 0) {
+        if (cc < 1) {
             if (mnt->mnt_worker_cnt < 1) {
                 dprint(3, "exiting due to no workers...\n");
                 break;
@@ -160,7 +160,7 @@ nct_req_recv_loop(void *arg)
             }
         }
 
-        req = mnt->mnt_req_tbl[msg->msg_rpc.rm_xid & (NCT_REQ_MAX - 1)];
+        req = mnt->mnt_req_tbl[msg->msg_rpc.rm_xid & ((1u << NCT_REQ_SHIFT) - 1)];
         if (req->req_xid != msg->msg_rpc.rm_xid) {
             abort();
         }

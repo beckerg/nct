@@ -217,9 +217,7 @@ nct_nfs_getattr3_encode(nct_req_t *req)
     struct rpc_msg rpc_msg;
     int len;
 
-    /* TODO: Shift by log2(NCT_REQ_MAX)...
-     */
-    req->req_xid = (nct_rpc_xid() << 10) | req->req_idx;
+    req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
 
     rpc_msg.rm_xid = req->req_xid;
     rpc_msg.rm_call.cb_prog = NFS_PROGRAM;
@@ -240,9 +238,7 @@ nct_nfs_read3_encode(nct_req_t *req, off_t offset, size_t length)
     read3_args args;
     int len;
 
-    /* TODO: Shift by log2(NCT_REQ_MAX)...
-     */
-    req->req_xid = (nct_rpc_xid() << 10) | req->req_idx;
+    req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
 
     rpc_msg.rm_xid = req->req_xid;
     rpc_msg.rm_call.cb_prog = NFS_PROGRAM;

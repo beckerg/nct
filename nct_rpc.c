@@ -78,7 +78,7 @@ nct_rpc_send(int fd, const void *msg, size_t len)
     while (nleft > 0) {
         cc = send(fd, msg, nleft, 0);
         if (cc < 1) {
-            return -1;
+            return (cc == -1) ? -1 : 0;
         }
 
         nleft -= cc;
@@ -97,7 +97,7 @@ nct_rpc_recv(int fd, void *buf, size_t len)
 
     cc = recv(fd, &mark, sizeof(mark), MSG_WAITALL);
     if (cc != sizeof(mark)) {
-        return -1;
+        return (cc == -1) ? -1 : 0;
     }
 
     nleft = ntohl(mark);
@@ -115,7 +115,7 @@ nct_rpc_recv(int fd, void *buf, size_t len)
     while (nleft > 0) {
         cc = recv(fd, buf, nleft, MSG_WAITALL);
         if (cc < 1) {
-            return -1;
+            return (cc == -1) ? -1 : 0;
         }
 
         nleft -= cc;

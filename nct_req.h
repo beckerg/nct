@@ -27,7 +27,8 @@
 
 /* Max number of NFS requests
  */
-#define NCT_REQ_MAX        (1024)          // Must be a power of two!
+#define NCT_REQ_SHIFT      (10)
+#define NCT_REQ_MAX        (1u << NCT_REQ_SHIFT)
 
 /* TODO: Make this setable via the command line
  */
