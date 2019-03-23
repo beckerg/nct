@@ -1496,9 +1496,11 @@ clp_breakargs(const char *src, const char *delim,
             }
             // else elides leading whitespace and NUL characters...
         } else if (delim && strchr(delim, *src)) {
-            argv[argc++] = prev;
-            *dst++ = '\000';
-            prev = dst;
+            if (dst > prev) {
+                argv[argc++] = prev;
+                *dst++ = '\000';
+                prev = dst;
+            }
         } else {
             *dst++ = *src;
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2015 Greg Becker.  All rights reserved.
+ * Copyright (c) 2014-2015,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,14 +21,13 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $Id: nct_rpc.c 283 2015-01-02 11:42:52Z greg $
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <ctype.h>
 #include <netdb.h>
@@ -53,9 +52,15 @@
 uint32_t
 nct_rpc_xid(void)
 {
+#ifdef atomic_fetch_add
+    static atomic_uint xid;
+
+    return atomic_fetch_add(&xid, 1);
+#else
     static uint32_t xid;
 
     return __sync_fetch_and_add(&xid, 1);
+#endif
 }
 
 ssize_t
@@ -66,16 +71,18 @@ nct_rpc_send(int fd, const void *msg, size_t len)
     ssize_t cc;
 
     mark = (uint32_t *)msg;
-    *mark = htonl(0x80000000 | len);
+    *mark = htonl(0x80000000u | len);
     len += sizeof(*mark);
     nleft = len;
 
     while (nleft > 0) {
-        cc = send(fd, msg + (len - nleft), nleft, 0);
-        if (cc <= 0) {
-            return cc;
+        cc = send(fd, msg, nleft, 0);
+        if (cc < 1) {
+            return -1;
         }
+
         nleft -= cc;
+        msg += cc;
     }
 
     return (len - sizeof(*mark));
@@ -84,28 +91,35 @@ nct_rpc_send(int fd, const void *msg, size_t len)
 ssize_t
 nct_rpc_recv(int fd, void *buf, size_t len)
 {
-    size_t nleft = len;
     uint32_t mark;
+    size_t nleft;
     ssize_t cc;
 
     cc = recv(fd, &mark, sizeof(mark), MSG_WAITALL);
     if (cc != sizeof(mark)) {
-        return cc;
+        return -1;
     }
 
     nleft = ntohl(mark);
-    if (!(0x80000000 & nleft)) {
+    if (!(0x80000000u & nleft)) {
         abort();
     }
-    nleft &= ~0x80000000;
+
+    nleft &= ~0x80000000u;
+    if (nleft > len) {
+        abort();
+    }
+
     len = nleft;
 
     while (nleft > 0) {
-        cc = recv(fd, (char *)buf + (len - nleft), nleft, MSG_WAITALL);
-        if (cc <= 0) {
-            return errno;
+        cc = recv(fd, buf, nleft, MSG_WAITALL);
+        if (cc < 1) {
+            return -1;
         }
+
         nleft -= cc;
+        buf += cc;
     }
 
     return len;

@@ -50,13 +50,114 @@
 #include <rpc/auth.h>
 #include <rpc/rpc.h>
 
+#include "clp.h"
 #include "main.h"
 #include "nct_shell.h"
+#include "nct_nfs.h"
+#include "nct_getattr.h"
+#include "nct_read.h"
+#include "nct.h"
+
+typedef int cmdfunc_t(int argc, char **argv, char *errbuf, size_t errbufsz);
+
+static cmdfunc_t help;
+static cmdfunc_t ls;
+static cmdfunc_t mount;
+
+struct {
+    const char *name;
+    cmdfunc_t *func;
+    const char *help;
+} cmd[] = {
+    { "help",   help,   "print this help list" },
+    { "ls",     ls,     "list files" },
+    { "mount",  mount,  "mount an nfs file system" },
+    { }
+};
+
+static int
+help(int argc, char **argv, char *errbuf, size_t errbufsz)
+{
+    int width = 7;
+    int i;
+
+    printf("  %*s  %s\n", width, "Command", "Description");
+
+    for (i = 0; cmd[i].name; ++i) {
+        printf("  %-*s  %s\n", width, cmd[i].name, cmd[i].help);
+    }
+
+    printf("\n");
+
+    return 0;
+}
+
+static int
+ls(int argc, char **argv, char *errbuf, size_t errbufsz)
+{
+    snprintf(errbuf, errbufsz, "%s command not yet implemented\n", argv[0]);
+
+    return ENOTSUP;
+}
+
+static int
+mount(int argc, char **argv, char *errbuf, size_t errbufsz)
+{
+    snprintf(errbuf, errbufsz, "%s command not yet implemented\n", argv[0]);
+
+    return ENOTSUP;
+}
+
 
 int
 nct_shell(int argc, char **argv)
 {
-    dprint(0, "not yet\n");
+    const size_t errbufsz = 128;
+    char linebuf[1024], *line;
+    char errbuf[errbufsz];
+    int rc, i;
 
-    return EX_UNAVAILABLE;
+    while (1) {
+        printf("> ");
+
+        line = fgets(linebuf, sizeof(linebuf), stdin);
+        if (!line) {
+            break;
+        }
+
+        rc = clp_breakargs(line, NULL, errbuf, errbufsz, &argc, &argv);
+        if (rc) {
+            printf("%s\n", errbuf);
+            continue;
+        }
+
+        if (argc < 1) {
+            free(argv);
+            continue;
+        }
+
+        for (i = 0; cmd[i].name; ++i) {
+            if (0 == strcasecmp(argv[0], cmd[i].name)) {
+                break;
+            }
+        }
+
+        if (!cmd[i].name) {
+            if (argv[0][0]) {
+                printf("invalid command %s, type 'help' for help\n\n", argv[0]);
+            }
+            free(argv);
+            continue;
+        }
+
+        rc = cmd[i].func(argc, argv, errbuf, errbufsz);
+        if (rc) {
+            printf("%s\n", errbuf);
+            continue;
+        }
+
+        free(argv);
+    }
+
+    return 0;
 }

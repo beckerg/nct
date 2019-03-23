@@ -21,8 +21,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $Id: nct_req.c 392 2016-04-13 11:21:51Z greg $
  */
 
 #include <stdio.h>
@@ -37,6 +35,7 @@
 #include <time.h>
 #include <sysexits.h>
 #include <sys/select.h>
+#include <sys/mman.h>
 
 #include <limits.h>
 #include <unistd.h>
@@ -72,8 +71,10 @@ nct_req_send_loop(void *arg)
             --mnt->mnt_send_waiters;
 
             if (mnt->mnt_worker_cnt < 1 && !mnt->mnt_send_head) {
-                dprint(2, "exiting due to no workers...\n");
-                return NULL;
+                pthread_mutex_unlock(&mnt->mnt_send_mtx);
+
+                dprint(3, "exiting due to no workers...\n");
+                pthread_exit(NULL);
             }
         }
 
@@ -107,10 +108,8 @@ nct_req_recv_loop(void *arg)
     nct_msg_t *msg;
     int rc;
 
-    msg = malloc(sizeof(*msg) + NCT_MSGSZ_MAX);
-    if (!msg) {
-        abort();
-    }
+    msg = mnt->mnt_req_msg;
+    assert(msg);
 
     while (1) {
         enum clnt_stat stat;
@@ -122,7 +121,7 @@ nct_req_recv_loop(void *arg)
         cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX);
         if (cc <= 0) {
             if (mnt->mnt_worker_cnt < 1) {
-                dprint(2, "exiting due to no workers...\n");
+                dprint(3, "exiting due to no workers...\n");
                 break;
             }
 
@@ -132,6 +131,7 @@ nct_req_recv_loop(void *arg)
             if (rc) {
                 abort();
             }
+
             /* Re-send all the pending inflight requests.
              */
             for (i = 0; i < NCT_REQ_MAX; ++i) {
@@ -142,6 +142,7 @@ nct_req_recv_loop(void *arg)
                     nct_req_send(req);
                 }
             }
+
             continue;
         }
 
@@ -186,11 +187,11 @@ nct_req_recv_loop(void *arg)
             req->req_next = mnt->mnt_recv_head;
             mnt->mnt_recv_head = req;
         }
+        req->req_done = true;
 
         if (mnt->mnt_recv_waiters > 0) {
             pthread_cond_signal(&mnt->mnt_recv_cv);
         }
-        req->req_done = 1;
         pthread_mutex_unlock(&mnt->mnt_recv_mtx);
     }
 
@@ -297,31 +298,51 @@ nct_req_free(nct_req_t *req)
 void
 nct_req_create(nct_mnt_t *mnt)
 {
+    void *msgbase, *reqbase;
+    size_t msgsz, tblsz, sz;
+    int flags, prot;
     nct_req_t *req;
-    void *msgbase;
-    void *reqbase;
-    size_t msgsz;
-    int rc;
+    int super = 0;
     int i;
 
+#if __FreeBSD__
+    super = MAP_ALIGNED_SUPER;
+#elif __linux__
+    super = MAP_HUGETLB;
+#endif
+
+    flags = MAP_ANONYMOUS | MAP_PRIVATE;
+    prot = PROT_READ | PROT_WRITE;
+
     msgsz = sizeof(nct_msg_t) + NCT_MSGSZ_MAX;
+    sz = (NCT_REQ_MAX + 1) * msgsz;
+    sz = (sz + (2 << 20) - 1) & ~((2 << 20) - 1);
 
-    /* Attempt to allocate all the reqs and I/O buffer memory from superpages.
-     */
-    rc = posix_memalign(&msgbase, 1024 * 1024 * 2, NCT_REQ_MAX * msgsz);
-    if (rc || msgbase == NULL) {
+  again:
+    msgbase = mmap(NULL, sz, prot, flags | super, -1, 0);
+    if (msgbase == MAP_FAILED) {
+        dprint(1, "mmap failed: super=%x, %d %s\n", super, errno, strerror(errno));
+        if (super) {
+            super = 0;
+            goto again;
+        }
+
         abort();
     }
 
-    rc = posix_memalign(&reqbase, 1024 * 1024 * 2, NCT_REQ_MAX * sizeof(*req));
-    if (rc || reqbase == NULL) {
+    tblsz = NCT_REQ_MAX * sizeof(req);
+    tblsz = (tblsz + 4096 - 1) & ~(4096 - 1);
+
+    sz = NCT_REQ_MAX * sizeof(*req) + tblsz;
+    sz = (sz + (2 << 20) - 1) & ~((2 << 20) - 1);
+
+    reqbase = mmap(NULL, sz, prot, flags | super, -1, 0);
+    if (reqbase == MAP_FAILED) {
         abort();
     }
 
-    mnt->mnt_req_tbl = calloc(NCT_REQ_MAX, sizeof(req));
-    if (!mnt->mnt_req_tbl) {
-        abort();
-    }
+    mnt->mnt_req_tbl = reqbase;
+    reqbase += tblsz;
 
     for (i = 0; i < NCT_REQ_MAX; ++i) {
         req = (nct_req_t *)reqbase + i;
@@ -329,7 +350,7 @@ nct_req_create(nct_mnt_t *mnt)
         memset(req, 0, sizeof(*req));
         req->req_idx = i;
         req->req_mnt = mnt;
-        req->req_msg = (nct_msg_t *)((char *)msgbase + (i * msgsz));
+        req->req_msg = msgbase + (i * msgsz);
 
         mnt->mnt_req_tbl[req->req_idx] = req;
 
@@ -338,4 +359,6 @@ nct_req_create(nct_mnt_t *mnt)
         mnt->mnt_req_head = req;
         pthread_mutex_unlock(&mnt->mnt_send_mtx);
     }
+
+    mnt->mnt_req_msg = msgbase + (i * msgsz);
 }

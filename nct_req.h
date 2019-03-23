@@ -31,7 +31,7 @@
 
 /* TODO: Make this setable via the command line
  */
-#define NCT_MSGSZ_MAX      (1024 * 1024)   // Max message size, including headers
+#define NCT_MSGSZ_MAX      (1024 * 129)    // Max message size, including headers
 
 struct nct_mnt_s;
 struct nct_req_s;
@@ -39,6 +39,7 @@ struct nct_req_s;
 typedef int nct_req_cb_t(struct nct_req_s *req);
 
 typedef struct nct_msg_s {
+    __aligned(64)
     XDR                 msg_xdr;            // RPC reply xdr
     struct rpc_msg      msg_rpc;            // RPC reply message
     struct rpc_err      msg_err;            // RPC reply error
@@ -49,6 +50,7 @@ typedef struct nct_msg_s {
 } nct_msg_t;
 
 typedef struct nct_req_s {
+    __aligned(64)
     struct nct_req_s   *req_next;
     struct nct_req_s  **req_prev;
 
@@ -62,10 +64,10 @@ typedef struct nct_req_s {
     int                 req_argc;
     char              **req_argv;
 
-    volatile uint64_t   req_tsc_start;          // Most recent request start time
-    volatile uint64_t   req_tsc_stop;           // Most recent request stop time
+    volatile uint64_t   req_tsc_start;      // Most recent request start time
+    volatile uint64_t   req_tsc_stop;       // Most recent request stop time
 
-    uint64_t            req_tsc_finish;         // Finish time
+    uint64_t            req_tsc_finish;     // Finish time
 
     void               *req_mnt;
 } nct_req_t;

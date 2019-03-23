@@ -60,35 +60,28 @@ int
 nct_connect(nct_mnt_t *mnt)
 {
     int rc;
-    int i;
 
     dprint(1, "connecting to %s...\n", mnt->mnt_server);
 
-    for (i = 0; i < 5; ++i) {
-        if (mnt->mnt_fd != -1) {
-            close(mnt->mnt_fd);
-        }
-
-        mnt->mnt_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (mnt->mnt_fd == -1) {
-            eprint("socket() failed: %s\n", strerror(errno));
-            sleep((i * 3) + 1);
-            continue;
-        }
-
-        rc = connect(mnt->mnt_fd, (struct sockaddr *)&mnt->mnt_faddr, sizeof(mnt->mnt_faddr));
-        if (rc) {
-            eprint("connect to %s failed: %s\n", mnt->mnt_server, strerror(errno));
-            sleep((i * 3) + 1);
-            continue;
-        }
-
-        dprint(1, "connected to %s fd=%d\n", mnt->mnt_server, mnt->mnt_fd);
-
-        return 0;
+    if (mnt->mnt_fd != -1) {
+        close(mnt->mnt_fd);
     }
 
-    return ETIMEDOUT;
+    mnt->mnt_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (mnt->mnt_fd == -1) {
+        return errno;
+    }
+
+    rc = connect(mnt->mnt_fd, (struct sockaddr *)&mnt->mnt_faddr, sizeof(mnt->mnt_faddr));
+    if (rc) {
+        close(mnt->mnt_fd);
+        mnt->mnt_fd = -1;
+        return errno;
+    }
+
+    dprint(1, "connected to %s fd=%d\n", mnt->mnt_server, mnt->mnt_fd);
+
+    return 0;
 }
 
 /* 1) Create a mount object
@@ -115,7 +108,7 @@ nct_mount(const char *path, in_port_t port)
     mnt = calloc(1, mntsz);
     if (!mnt) {
         eprint("calloc(%zu) failed\n", mntsz);
-        exit(EX_OSERR);
+        return NULL;
     }
 
     memcpy(mnt->mnt_args, path, pathlen + 1);
@@ -141,7 +134,8 @@ nct_mount(const char *path, in_port_t port)
 
     if (!isalpha(mnt->mnt_server[0]) && !isdigit(mnt->mnt_server[0])) {
         eprint("invalid host name %s\n", mnt->mnt_server);
-        exit(EX_NOHOST);
+        free(mnt);
+        return NULL;
     }
 
     gethostname(mnt->mnt_hostname, sizeof(mnt->mnt_hostname));
@@ -152,19 +146,22 @@ nct_mount(const char *path, in_port_t port)
     hent = gethostbyname(mnt->mnt_server);
     if (!hent) {
         eprint("gethostbyname(%s) failed: %s\n", mnt->mnt_server, hstrerror(h_errno));
-        exit(EX_NOHOST);
+        free(mnt);
+        return NULL;
     }
 
     if (hent->h_addrtype != AF_INET) {
         eprint("host %s does not have an AF_INET address\n", mnt->mnt_server);
-        exit(EX_NOHOST);
+        free(mnt);
+        return NULL;
     }
 
     if (!inet_ntop(AF_INET, hent->h_addr_list[0],
                    mnt->mnt_serverip, sizeof(mnt->mnt_serverip))) {
         eprint("unable to convert server address %s to dotted quad notation: %s",
                mnt->mnt_server, strerror(errno));
-        exit(EX_NOHOST);
+        free(mnt);
+        return NULL;
     }
 
     mnt->mnt_serverip[sizeof(mnt->mnt_serverip) - 1] = '\000';
@@ -173,13 +170,16 @@ nct_mount(const char *path, in_port_t port)
     mnt->mnt_auth = authunix_create(mnt->mnt_hostname, geteuid(), getegid(), 0, NULL);
     if (!mnt->mnt_auth) {
         eprint("authunix_create() failed\n");
-        abort();
+        free(mnt);
+        return NULL;
     }
 
     rc = nct_connect(mnt);
     if (rc) {
-        eprint("nct_connect() failed\n");
-        abort();
+        eprint("nct_connect() failed: %s\n", strerror(rc));
+        auth_destroy(mnt->mnt_auth);
+        free(mnt);
+        return NULL;
     }
 
     rc = pthread_mutex_init(&mnt->mnt_send_mtx, NULL);
@@ -218,6 +218,8 @@ nct_mount(const char *path, in_port_t port)
         abort();
     }
 
+    nct_req_create(mnt);
+
     rc = pthread_create(&mnt->mnt_send_td, NULL, nct_req_send_loop, mnt);
     if (rc) {
         eprint("pthread_create() failed: %s\n", strerror(errno));
@@ -230,10 +232,7 @@ nct_mount(const char *path, in_port_t port)
         abort();
     }
 
-    nct_req_create(mnt);
-
     nct_nfs_mount(mnt);
-
     nct_mnt_print(mnt);
 
     /* Get the attributes
@@ -292,7 +291,7 @@ nct_umount(nct_mnt_t *mnt)
     int rc;
 
     while (mnt->mnt_worker_cnt > 0) {
-        sleep(3);
+        sleep(1);
     }
 
     shutdown(mnt->mnt_fd, SHUT_RDWR);
