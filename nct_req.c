@@ -32,6 +32,7 @@
 #include <ctype.h>
 #include <netdb.h>
 #include <errno.h>
+#include <assert.h>
 #include <time.h>
 #include <sysexits.h>
 #include <sys/select.h>
