@@ -8,6 +8,7 @@ typedef void *start_t(void *);
 
 /* The command line parser set the following global variables:
  */
+extern char version[];
 extern char *progname;      // The programe name (i.e., the basename of argv[0])
 extern int verbosity;       // The number of times -v appeared on the command line
 

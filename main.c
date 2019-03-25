@@ -60,8 +60,7 @@
 #include "nct_read.h"
 #include "nct.h"
 
-static char nct_version[] = NCT_VERSION;
-
+char version[] = NCT_VERSION;
 char *progname;
 int verbosity;
 
@@ -91,7 +90,7 @@ static clp_posparam_t posparamv[] = {
 
 static clp_option_t optionv[] = {
     CLP_OPTION_VERBOSE(verbosity),
-    CLP_OPTION_VERSION(nct_version),
+    CLP_OPTION_VERSION(version),
     CLP_OPTION_HELP,
 
     CLP_OPTION(long, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),

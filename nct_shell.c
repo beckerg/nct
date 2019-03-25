@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2016 Greg Becker.  All rights reserved.
+ * Copyright (c) 2015-2016,2019 Greg Becker.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -21,8 +21,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- * $Id: nct_shell.c 392 2016-04-13 11:21:51Z greg $
  */
 
 #include <stdio.h>
@@ -30,20 +28,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdarg.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
-#include <stdarg.h>
-#include <assert.h>
-#include <signal.h>
-#include <sysexits.h>
 #include <ctype.h>
-#include <time.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
-#include <pthread.h>
 #include <limits.h>
 
 #include <rpc/types.h>
@@ -53,38 +40,57 @@
 #include "clp.h"
 #include "main.h"
 #include "nct_shell.h"
-#include "nct_nfs.h"
-#include "nct_getattr.h"
-#include "nct_read.h"
 #include "nct.h"
 
-typedef int cmdfunc_t(int argc, char **argv, char *errbuf, size_t errbufsz);
+struct cmd;
+typedef int cmdfunc_t(struct cmd *cmd);
 
 static cmdfunc_t help;
 static cmdfunc_t ls;
 static cmdfunc_t mount;
+static cmdfunc_t nyi;
 
-struct {
+struct cmd {
     const char *name;
     cmdfunc_t *func;
     const char *help;
-} cmd[] = {
-    { "help",   help,   "print this help list" },
-    { "ls",     ls,     "list files" },
-    { "mount",  mount,  "mount an nfs file system" },
+    const char *line;
+};
+
+static struct cmd cmdv[] = {
+    { "cd",       nyi,    "change current working directory" },
+    { "getattr",  nyi,    "run NFS getattr" },
+    { "help",     help,   "print this help list" },
+    { "ls",       ls,     "list files" },
+    { "mkdir",    nyi,    "make directories" },
+    { "mount",    mount,  "mount an nfs file system" },
+    { "rm",       nyi,    "remove directory entries" },
+    { "rmdir",    nyi,    "remove directory" },
+    { "umount",   nyi,    "unmount an nfs file system" },
     { }
 };
 
+static const size_t errbufsz = 128;
+static char errbuf[errbufsz];
+
 static int
-help(int argc, char **argv, char *errbuf, size_t errbufsz)
+nyi(struct cmd *cmd)
+{
+    snprintf(errbuf, sizeof(errbuf), "command not yet implemented\n");
+
+    return ENOTSUP;
+}
+
+static int
+help(struct cmd *cmd)
 {
     int width = 7;
     int i;
 
     printf("  %*s  %s\n", width, "Command", "Description");
 
-    for (i = 0; cmd[i].name; ++i) {
-        printf("  %-*s  %s\n", width, cmd[i].name, cmd[i].help);
+    for (i = 0; cmdv[i].name; ++i) {
+        printf("  %-*s  %s\n", width, cmdv[i].name, cmdv[i].help);
     }
 
     printf("\n");
@@ -93,70 +99,135 @@ help(int argc, char **argv, char *errbuf, size_t errbufsz)
 }
 
 static int
-ls(int argc, char **argv, char *errbuf, size_t errbufsz)
+ls(struct cmd *cmd)
 {
-    snprintf(errbuf, errbufsz, "%s command not yet implemented\n", argv[0]);
+    return nyi(cmd);
+}
 
-    return ENOTSUP;
+static in_port_t port = 2049;
+static char *rhostpath, *mntnode;
+static size_t readsize = 131072;
+static size_t writesize = 131072;
+
+static clp_posparam_t mount_posparamv[] = {
+    {
+        .name = "rhostpath",
+        .help = "[user@]rhost:path",
+        .convert = clp_cvt_string,
+        .cvtdst = &rhostpath,
+    },
+
+    {
+        .name = "node",
+        .help = "mount point",
+        .convert = clp_cvt_string,
+        .cvtdst = &mntnode,
+    },
+
+    CLP_PARAM_END
+};
+
+static clp_option_t mount_optionv[] = {
+    CLP_OPTION_VERBOSE(verbosity),
+    CLP_OPTION_VERSION(version),
+    CLP_OPTION_HELP,
+
+    CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "remote NFSd port"),
+    CLP_OPTION(size_t, 'r', readsize, NULL, NULL, "read size"),
+    CLP_OPTION(size_t, 'w', writesize, NULL, NULL, "write size"),
+
+    CLP_OPTION_END
+};
+
+static bool
+mount_given(int c)
+{
+    clp_option_t *opt = clp_option_find(mount_optionv, c);
+
+    return (opt && opt->given);
 }
 
 static int
-mount(int argc, char **argv, char *errbuf, size_t errbufsz)
+mount(struct cmd *cmd)
 {
-    snprintf(errbuf, errbufsz, "%s command not yet implemented\n", argv[0]);
+    int argc, optind, rc;
+    char **argv;
 
-    return ENOTSUP;
+    rc = clp_breakargs(cmd->line, NULL, errbuf, errbufsz, &argc, &argv);
+    if (rc)
+        return rc;
+
+    rc = clp_parsev(argc, argv, mount_optionv, mount_posparamv, errbuf, errbufsz, &optind);
+    if (rc) {
+        free(argv);
+        return rc;
+    }
+
+    if (mount_given('h') || mount_given('V')) {
+        free(argv);
+        return 0;
+    }
+
+    //argc -= optind;
+    //argv += optind;
+
+    free(argv);
+
+    return nyi(cmd);
 }
-
 
 int
 nct_shell(int argc, char **argv)
 {
-    const size_t errbufsz = 128;
-    char linebuf[1024], *line;
-    char errbuf[errbufsz];
-    int rc, i;
+    char linebuf[1024], *line, *pc;
+    int len, rc, i;
 
     while (1) {
+        const char *errmsg = "invalid";
+        struct cmd *cmd = NULL;
+
         printf("> ");
 
         line = fgets(linebuf, sizeof(linebuf), stdin);
-        if (!line) {
+        if (!line)
             break;
-        }
 
-        rc = clp_breakargs(line, NULL, errbuf, errbufsz, &argc, &argv);
-        if (rc) {
-            printf("%s\n", errbuf);
+        while (*line && isspace(*line))
+            ++line;
+
+        pc = line;
+        while (*pc && !isspace(*pc))
+            ++pc;
+
+        len = pc - line;
+        if (len < 1)
             continue;
-        }
 
-        if (argc < 1) {
-            free(argv);
-            continue;
-        }
+        for (i = 0; cmdv[i].name; ++i) {
+            if (strncasecmp(line, cmdv[i].name, len))
+                continue;
 
-        for (i = 0; cmd[i].name; ++i) {
-            if (0 == strcasecmp(argv[0], cmd[i].name)) {
+            if (cmd) {
+                errmsg = "ambiguous";
+                cmd = NULL;
                 break;
             }
+
+            cmd = cmdv + i;
+            cmd->line = line;
+
+            if (strlen(cmd->name) == len)
+                break; /* exact match */
         }
 
-        if (!cmd[i].name) {
-            if (argv[0][0]) {
-                printf("invalid command %s, type 'help' for help\n\n", argv[0]);
-            }
-            free(argv);
+        if (!cmd) {
+            printf("%s command '%.*s', type 'help' for help\n\n", errmsg, len, line);
             continue;
         }
 
-        rc = cmd[i].func(argc, argv, errbuf, errbufsz);
-        if (rc) {
+        rc = cmd->func(cmd);
+        if (rc)
             printf("%s\n", errbuf);
-            continue;
-        }
-
-        free(argv);
     }
 
     return 0;
