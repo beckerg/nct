@@ -73,6 +73,10 @@ struct mountres3 {
 
 typedef struct mountres3 mountres3;
 
+extern int nct_rpc_encode(struct rpc_msg *msg, AUTH *auth,
+                          xdrproc_t xdrproc, void *args,
+                          char *buf, int bufsz);
+
 extern uint32_t nct_rpc_xid(void);
 
 extern ssize_t nct_rpc_send(int fd, const void *buf, size_t len);

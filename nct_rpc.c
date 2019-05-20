@@ -95,32 +95,61 @@ nct_rpc_recv(int fd, void *buf, size_t len)
     size_t nleft;
     ssize_t cc;
 
-    cc = recv(fd, &mark, sizeof(mark), MSG_WAITALL);
-    if (cc != sizeof(mark)) {
+    cc = recv(fd, &mark, sizeof(mark), MSG_PEEK | MSG_WAITALL);
+    if (cc != sizeof(mark))
         return (cc == -1) ? -1 : 0;
-    }
 
-    nleft = ntohl(mark);
-    if (!(0x80000000u & nleft)) {
+    mark = ntohl(mark);
+    if (!(0x80000000u & mark))
         abort();
-    }
 
-    nleft &= ~0x80000000u;
-    if (nleft > len) {
+    mark &= ~0x80000000u;
+    if (mark > len)
         abort();
-    }
 
+    nleft = mark + 4;
     len = nleft;
 
     while (nleft > 0) {
         cc = recv(fd, buf, nleft, MSG_WAITALL);
-        if (cc < 1) {
+        if (cc < 1)
             return (cc == -1) ? -1 : 0;
-        }
 
         nleft -= cc;
         buf += cc;
     }
+
+    return len;
+}
+
+int
+nct_rpc_encode(struct rpc_msg *msg, AUTH *auth,
+               xdrproc_t xdrproc, void *args,
+               char *buf, int bufsz)
+{
+    int len = -1;
+    XDR xdr;
+
+    if (!buf || bufsz < sizeof(msg) + 4)
+        abort();
+
+    if (auth) {
+        msg->rm_call.cb_cred = auth->ah_cred;
+        msg->rm_call.cb_verf = auth->ah_verf;
+    } else {
+        msg->rm_call.cb_cred = _null_auth;
+        msg->rm_call.cb_verf = _null_auth;
+    }
+
+    /* Create the serialized RPC message, leaving room at the
+     * front for the RPC record mark.
+     */
+    xdrmem_create(&xdr, buf + 4, bufsz - 4, XDR_ENCODE);
+
+    if (xdr_callmsg(&xdr, msg) && (*xdrproc)(&xdr, args))
+        len = xdr_getpos(&xdr);
+
+    xdr_destroy(&xdr);
 
     return len;
 }

@@ -107,7 +107,18 @@ nct_req_recv_loop(void *arg)
 {
     nct_mnt_t *mnt = arg;
     nct_msg_t *msg;
+    int optval;
     int rc;
+
+    optval = 4;
+    rc = setsockopt(mnt->mnt_fd, SOL_SOCKET, SO_RCVLOWAT, &optval, sizeof(optval));
+    if (rc) {
+        char errbuf[128];
+
+        strerror_r(errno, errbuf, sizeof(errbuf));
+        eprint("setsockopt(SO_RCVLOWAT): %s\n", errbuf);
+        abort();
+    }
 
     msg = mnt->mnt_req_msg;
     assert(msg);
@@ -120,7 +131,7 @@ nct_req_recv_loop(void *arg)
         int i;
 
         cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX);
-        if (cc < 1) {
+        if (cc < 24) {
             if (mnt->mnt_worker_cnt < 1) {
                 dprint(3, "exiting due to no workers...\n");
                 break;
@@ -147,7 +158,8 @@ nct_req_recv_loop(void *arg)
             continue;
         }
 
-        stat = nct_rpc_decode(&msg->msg_xdr, msg->msg_data, cc, &msg->msg_rpc, &msg->msg_err);
+        stat = nct_rpc_decode(&msg->msg_xdr, msg->msg_data + 4, cc - 4,
+                              &msg->msg_rpc, &msg->msg_err);
 
         if (stat != RPC_SUCCESS) {
             dprint(1, "nct_rpc_decode(%p, %ld) failed: %d %s\n",

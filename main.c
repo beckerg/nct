@@ -58,6 +58,7 @@
 #include "nct_nfs.h"
 #include "nct_getattr.h"
 #include "nct_read.h"
+#include "nct_null.h"
 #include "nct.h"
 
 char version[] = NCT_VERSION;
@@ -219,6 +220,9 @@ main(int argc, char **argv)
     }
     else if (0 == strcmp("read", argv[0])) {
         priv = test_read_init(argc, argv, duration, &start, &rhostpath);
+    }
+    else if (0 == strcmp("null", argv[0])) {
+        priv = test_null_init(argc, argv, duration, &start, &rhostpath);
     }
     else if (0 == strcmp("shell", argv[0])) {
         return nct_shell(argc, argv);

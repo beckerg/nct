@@ -33,6 +33,7 @@
 struct nct_mnt_s;
 
 extern void nct_nfs_mount(struct nct_mnt_s *mnt);
+extern void nct_nfs_null_encode(nct_req_t *req);
 extern void nct_nfs_getattr3_encode(nct_req_t *req);
 extern void nct_nfs_read3_encode(nct_req_t *req, off_t offset, size_t length);
 

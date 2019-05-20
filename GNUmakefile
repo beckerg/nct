@@ -11,12 +11,12 @@ PROG	:= nct
 HDR	:= main.h nct_req.h nct.h nct_xdr.h nct_nfs.h nct_rpc.h nct_mount.h nct_vnode.h
 HDR	+= nct_vnode.h nct_nfstypes.h
 HDR	+= nct_shell.h
-HDR	+= nct_read.h nct_getattr.h
+HDR	+= nct_read.h nct_getattr.h nct_null.h
 HDR	+= clp.h
 
 SRC	:= main.c nct_req.c nct.c nct_xdr.c nct_nfs.c nct_rpc.c nct_mount.c nct_vnode.c
 SRC	+= nct_shell.c
-SRC	+= nct_read.c nct_getattr.c
+SRC	+= nct_read.c nct_getattr.c nct_null.c
 SRC	+= clp.c
 
 #LDLIBS	:= -lm -lpthread -lrt

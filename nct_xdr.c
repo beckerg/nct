@@ -50,38 +50,6 @@
 
 #include "nct_xdr.h"
 
-int
-nct_xdr_create(struct rpc_msg *rpc_msg, uint32_t proc, AUTH *auth,
-               xdrproc_t xdrproc, void *args, char *buf, int bufsz)
-{
-    XDR xdrs;
-    long l;
-    int rc;
-
-    xdrmem_create(&xdrs, buf, bufsz, XDR_ENCODE);
-
-    if (!xdr_callhdr(&xdrs, rpc_msg)) {
-        abort();
-    }
-
-    l = proc;
-    if (!XDR_PUTLONG(&xdrs, &l)) {
-        abort();
-    }
-    if (!AUTH_MARSHALL(auth, &xdrs)) {
-        abort();
-    }
-    if (!(*xdrproc)(&xdrs, args)) {
-        abort();
-    }
-
-    rc = XDR_GETPOS(&xdrs);
-
-    XDR_DESTROY(&xdrs);
-
-    return rc;
-}
-
 bool_t
 xdr_uint64(XDR *xdrs, uint64 *objp)
 {

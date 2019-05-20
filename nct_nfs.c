@@ -79,8 +79,8 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
 {
     char txbuf[1024], rxbuf[1024];
     struct sockaddr_in faddr;
-    struct rpc_msg rpc_msg;
-    struct rpc_err rpc_err;
+    struct rpc_msg msg;
+    struct rpc_err err;
     enum clnt_stat stat;
     mountres3 mntres;
     in_port_t port;
@@ -124,15 +124,18 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
     }
 
 
-    rpc_msg.rm_xid = nct_rpc_xid();
-    rpc_msg.rm_call.cb_prog = MOUNT_PROGRAM;
-    rpc_msg.rm_call.cb_vers = MOUNT_V3;
+    msg.rm_xid = nct_rpc_xid();
+    msg.rm_direction = CALL;
+    msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
+    msg.rm_call.cb_prog = MOUNT_PROGRAM;
+    msg.rm_call.cb_vers = MOUNT_V3;
+    msg.rm_call.cb_proc = MOUNT3_MNT;
 
     path = mnt->mnt_path;
 
-    txlen = nct_xdr_create(&rpc_msg, MOUNT3_MNT, mnt->mnt_auth,
+    txlen = nct_rpc_encode(&msg, mnt->mnt_auth,
                            (xdrproc_t)nct_xdr_dirpath, &path,
-                           txbuf + 4, sizeof(txbuf) - 4);
+                           txbuf, sizeof(txbuf));
 
     cc = nct_rpc_send(fd, txbuf, txlen);
     if (cc != txlen) {
@@ -142,13 +145,13 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
     }
 
     cc = nct_rpc_recv(fd, rxbuf, sizeof(rxbuf));
-    if (cc <= 0) {
+    if (cc < 24) {
         eprint("nct_rpc_recv(%d, %p, %zu): %s\n",
                fd, rxbuf, sizeof(rxbuf), (cc == -1) ? strerror(errno) : "EOF");
         abort();
     }
 
-    stat = nct_rpc_decode(&xdr, rxbuf, cc, &rpc_msg, &rpc_err);
+    stat = nct_rpc_decode(&xdr, rxbuf + 4, cc - 4, &msg, &err);
     if (stat != RPC_SUCCESS) {
         eprint("nct_rpc_decode(%p, %ld) failed: %d %s\n",
                rxbuf, cc, stat, clnt_sperrno(stat));
@@ -211,21 +214,47 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
 }
 
 void
-nct_nfs_getattr3_encode(nct_req_t *req)
+nct_nfs_null_encode(nct_req_t *req)
 {
-    nct_mnt_t *mnt = req->req_mnt;
-    struct rpc_msg rpc_msg;
+    //nct_mnt_t *mnt = req->req_mnt;
+    struct rpc_msg msg;
     int len;
 
     req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
 
-    rpc_msg.rm_xid = req->req_xid;
-    rpc_msg.rm_call.cb_prog = NFS_PROGRAM;
-    rpc_msg.rm_call.cb_vers = NFS_V3;
+    msg.rm_xid = req->req_xid;
+    msg.rm_direction = CALL;
+    msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
+    msg.rm_call.cb_prog = NFS_PROGRAM;
+    msg.rm_call.cb_vers = NFS_V3;
+    msg.rm_call.cb_proc = NFS3_NULL;
 
-    len = nct_xdr_create(&rpc_msg, NFS3_GETATTR, mnt->mnt_auth,
+    len = nct_rpc_encode(&msg, NULL,
+                         (xdrproc_t)xdr_void, NULL,
+                         req->req_msg->msg_data, NCT_MSGSZ_MAX);
+
+    req->req_msg->msg_len = len;
+}
+
+void
+nct_nfs_getattr3_encode(nct_req_t *req)
+{
+    nct_mnt_t *mnt = req->req_mnt;
+    struct rpc_msg msg;
+    int len;
+
+    req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
+
+    msg.rm_xid = req->req_xid;
+    msg.rm_direction = CALL;
+    msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
+    msg.rm_call.cb_prog = NFS_PROGRAM;
+    msg.rm_call.cb_vers = NFS_V3;
+    msg.rm_call.cb_proc = NFS3_GETATTR;
+
+    len = nct_rpc_encode(&msg, mnt->mnt_auth,
                          (xdrproc_t)nct_xdr_getattr3_encode, &mnt->mnt_vn->xvn_fh,
-                         req->req_msg->msg_data + 4, NCT_MSGSZ_MAX - 4);
+                         req->req_msg->msg_data, NCT_MSGSZ_MAX);
 
     req->req_msg->msg_len = len;
 }
@@ -234,24 +263,27 @@ void
 nct_nfs_read3_encode(nct_req_t *req, off_t offset, size_t length)
 {
     nct_mnt_t *mnt = req->req_mnt;
-    struct rpc_msg rpc_msg;
+    struct rpc_msg msg;
     read3_args args;
     int len;
 
     req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
 
-    rpc_msg.rm_xid = req->req_xid;
-    rpc_msg.rm_call.cb_prog = NFS_PROGRAM;
-    rpc_msg.rm_call.cb_vers = NFS_V3;
+    msg.rm_xid = req->req_xid;
+    msg.rm_direction = CALL;
+    msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
+    msg.rm_call.cb_prog = NFS_PROGRAM;
+    msg.rm_call.cb_vers = NFS_V3;
+    msg.rm_call.cb_proc = NFS3_READ;
 
     args.file.data.data_len = mnt->mnt_vn->xvn_fh.fhandle3_len;
     args.file.data.data_val = mnt->mnt_vn->xvn_fh.fhandle3_val;
     args.offset = offset;
     args.count = length;
 
-    len = nct_xdr_create(&rpc_msg, NFS3_READ, mnt->mnt_auth,
+    len = nct_rpc_encode(&msg, mnt->mnt_auth,
                          (xdrproc_t)nct_xdr_read3_encode, &args,
-                         req->req_msg->msg_data + 4, NCT_MSGSZ_MAX - 4);
+                         req->req_msg->msg_data, NCT_MSGSZ_MAX);
 
     req->req_msg->msg_len = len;
 }
