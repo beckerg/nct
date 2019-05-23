@@ -47,77 +47,78 @@
 #include <rpc/auth.h>
 #include <rpc/rpc.h>
 
+#include "main.h"
 #include "nct_rpc.h"
 
-uint32_t
-nct_rpc_xid(void)
-{
-#ifdef atomic_fetch_add
-    static atomic_uint xid;
-
-    return atomic_fetch_add(&xid, 1);
-#else
-    static uint32_t xid;
-
-    return __sync_fetch_and_add(&xid, 1);
-#endif
-}
-
 ssize_t
-nct_rpc_send(int fd, const void *msg, size_t len)
-{
-    uint32_t *mark;
-    size_t nleft;
-    ssize_t cc;
-
-    mark = (uint32_t *)msg;
-    *mark = htonl(0x80000000u | len);
-    len += sizeof(*mark);
-    nleft = len;
-
-    while (nleft > 0) {
-        cc = send(fd, msg, nleft, 0);
-        if (cc < 1) {
-            return (cc == -1) ? -1 : 0;
-        }
-
-        nleft -= cc;
-        msg += cc;
-    }
-
-    return (len - sizeof(*mark));
-}
-
-ssize_t
-nct_rpc_recv(int fd, void *buf, size_t len)
+nct_rpc_send(int fd, void *buf, size_t bufsz)
 {
     uint32_t mark;
     size_t nleft;
     ssize_t cc;
 
-    cc = recv(fd, &mark, sizeof(mark), MSG_PEEK | MSG_WAITALL);
-    if (cc != sizeof(mark))
-        return (cc == -1) ? -1 : 0;
+    mark = htonl((bufsz - sizeof(mark)) | 0x80000000u);
+    memcpy(buf, &mark, sizeof(mark));
+
+    nleft = bufsz;
+
+    while (nleft > 0) {
+        cc = send(fd, buf, nleft, 0);
+        if (cc < 1) {
+            return (cc == -1) ? -1 : 0;
+        }
+
+        nleft -= cc;
+        buf += cc;
+    }
+
+    return bufsz;
+}
+
+ssize_t
+nct_rpc_recv(int fd, void *buf, size_t bufsz)
+{
+    static uint32_t mark = 0;
+    const size_t marksz = sizeof(mark);
+    size_t nleft;
+    ssize_t len;
+    ssize_t cc;
+
+    if (mark == 0) {
+        cc = recv(fd, &mark, marksz, MSG_WAITALL);
+        if (cc != marksz)
+            return (cc == -1) ? -1 : 0;
+    }
 
     mark = ntohl(mark);
-    if (!(0x80000000u & mark))
+
+    if (!(mark & 0x80000000u))
         abort();
 
     mark &= ~0x80000000u;
-    if (mark > len)
+    if (mark + marksz > bufsz)
         abort();
 
-    nleft = mark + 4;
-    len = nleft;
+    /* Try to read the next mark...
+     */
+    nleft = mark + marksz;
+    len = mark;
 
     while (nleft > 0) {
-        cc = recv(fd, buf, nleft, MSG_WAITALL);
+        cc = recv(fd, buf, nleft, 0);
         if (cc < 1)
             return (cc == -1) ? -1 : 0;
 
         nleft -= cc;
         buf += cc;
+
+        if (nleft == marksz) {
+            mark = 0;
+            return len;
+        }
     }
+
+    memcpy(&mark, buf - marksz, marksz);
 
     return len;
 }
@@ -130,7 +131,7 @@ nct_rpc_encode(struct rpc_msg *msg, AUTH *auth,
     int len = -1;
     XDR xdr;
 
-    if (!buf || bufsz < sizeof(msg) + 4)
+    if (!buf || bufsz < BYTES_PER_XDR_UNIT * 6 + 4)
         abort();
 
     if (auth) {
@@ -147,7 +148,7 @@ nct_rpc_encode(struct rpc_msg *msg, AUTH *auth,
     xdrmem_create(&xdr, buf + 4, bufsz - 4, XDR_ENCODE);
 
     if (xdr_callmsg(&xdr, msg) && (*xdrproc)(&xdr, args))
-        len = xdr_getpos(&xdr);
+        len = xdr_getpos(&xdr) + 4;
 
     xdr_destroy(&xdr);
 

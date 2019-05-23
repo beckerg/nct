@@ -4,29 +4,23 @@
 
 
 # The only variables you might need to change in this makefile are:
-# PROG, SRC, HDR, LDLIBS, and VPATH.
+# PROG, SRC, HDR, LDLIBS, VPATH, and CDEFS.
 #
 PROG	:= nct
 
-HDR	:= main.h nct_req.h nct.h nct_xdr.h nct_nfs.h nct_rpc.h nct_mount.h nct_vnode.h
-HDR	+= nct_vnode.h nct_nfstypes.h
-HDR	+= nct_shell.h
-HDR	+= nct_read.h nct_getattr.h nct_null.h
-HDR	+= clp.h
+SRC	:= nct_req.c nct.c nct_xdr.c nct_nfs.c nct_rpc.c nct_mount.c nct_vnode.c
+SRC	+= nct_read.c nct_getattr.c nct_null.c nct_shell.c
+SRC	+= main.c clp.c
 
-SRC	:= main.c nct_req.c nct.c nct_xdr.c nct_nfs.c nct_rpc.c nct_mount.c nct_vnode.c
-SRC	+= nct_shell.c
-SRC	+= nct_read.c nct_getattr.c nct_null.c
-SRC	+= clp.c
+HDR	:= ${patsubst %.c,%.h,${SRC}}
+HDR	+= nct_nfstypes.h
 
-#LDLIBS	:= -lm -lpthread -lrt
-#LDLIBS	:= -lthr
 LDLIBS	:= -lpthread
 
 VPATH	:=
 
 # Uncomment USE_TSC if you have a P-state invariant TSC that is synchronized
-# across all cores.  By default we use gettimeofday().
+# across all cores.  By default we use gettimeofday() for timing purposes.
 #
 #CDEFS	+= -DUSE_TSC
 
@@ -109,7 +103,7 @@ ${PROG}: ${OBJ}
 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
 
 
-# We make ${OBJ} depend on the makefile so that all objects are rebuilt
+# We make ${OBJ} depend on the GNUmakefile so that all objects are rebuilt
 # if the makefile changes.
 #
 ${OBJ}: GNUmakefile

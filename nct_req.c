@@ -60,6 +60,7 @@ void *
 nct_req_send_loop(void *arg)
 {
     nct_mnt_t *mnt = arg;
+    uint32_t xid = rdtsc();
 
     while (1) {
         nct_req_t *head, *req;
@@ -84,8 +85,15 @@ nct_req_send_loop(void *arg)
         pthread_mutex_unlock(&mnt->mnt_send_mtx);
 
         while (( req = head )) {
+            struct rpc_msg *msg;
+
             head = req->req_next;
             req->req_tsc_start = rdtsc();
+
+            msg = (void *)req->req_msg->msg_data + 4;
+            msg->rm_xid = htonl(xid);
+            mnt->mnt_req_tbl[xid % NCT_REQ_MAX] = req;
+            req->req_xid = xid++;
 
             cc = nct_rpc_send(mnt->mnt_fd, req->req_msg->msg_data, req->req_msg->msg_len);
             if (cc != req->req_msg->msg_len) {
@@ -107,31 +115,22 @@ nct_req_recv_loop(void *arg)
 {
     nct_mnt_t *mnt = arg;
     nct_msg_t *msg;
-    int optval;
     int rc;
-
-    optval = 4;
-    rc = setsockopt(mnt->mnt_fd, SOL_SOCKET, SO_RCVLOWAT, &optval, sizeof(optval));
-    if (rc) {
-        char errbuf[128];
-
-        strerror_r(errno, errbuf, sizeof(errbuf));
-        eprint("setsockopt(SO_RCVLOWAT): %s\n", errbuf);
-        abort();
-    }
 
     msg = mnt->mnt_req_msg;
     assert(msg);
 
     while (1) {
+        const size_t rpcmin = BYTES_PER_XDR_UNIT * 6;
         enum clnt_stat stat;
         nct_req_t *req;
         nct_msg_t *tmp;
         ssize_t cc;
+        u_int idx;
         int i;
 
         cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX);
-        if (cc < 24) {
+        if (cc < rpcmin) {
             if (mnt->mnt_worker_cnt < 1) {
                 dprint(3, "exiting due to no workers...\n");
                 break;
@@ -158,8 +157,7 @@ nct_req_recv_loop(void *arg)
             continue;
         }
 
-        stat = nct_rpc_decode(&msg->msg_xdr, msg->msg_data + 4, cc - 4,
-                              &msg->msg_rpc, &msg->msg_err);
+        stat = nct_rpc_decode(&msg->msg_xdr, msg->msg_data, cc, &msg->msg_rpc, &msg->msg_err);
 
         if (stat != RPC_SUCCESS) {
             dprint(1, "nct_rpc_decode(%p, %ld) failed: %d %s\n",
@@ -172,7 +170,10 @@ nct_req_recv_loop(void *arg)
             }
         }
 
-        req = mnt->mnt_req_tbl[msg->msg_rpc.rm_xid & ((1u << NCT_REQ_SHIFT) - 1)];
+        idx = msg->msg_rpc.rm_xid % NCT_REQ_MAX;
+        req = mnt->mnt_req_tbl[idx];
+        mnt->mnt_req_tbl[idx] = NULL;
+
         if (req->req_xid != msg->msg_rpc.rm_xid) {
             abort();
         }
@@ -202,9 +203,8 @@ nct_req_recv_loop(void *arg)
         }
         req->req_done = true;
 
-        if (mnt->mnt_recv_waiters > 0) {
+        if (mnt->mnt_recv_waiters > 0)
             pthread_cond_signal(&mnt->mnt_recv_cv);
-        }
         pthread_mutex_unlock(&mnt->mnt_recv_mtx);
     }
 
@@ -220,12 +220,25 @@ nct_req_send(nct_req_t *req)
 
     req->req_done = 0;
 
+#if 0
+    if (mnt->mnt_worker_cnt == 1) {
+        ssize_t cc;
+
+        req->req_tsc_start = rdtsc();
+
+        cc = nct_rpc_send(mnt->mnt_fd, req->req_msg->msg_data, req->req_msg->msg_len);
+        if (cc != req->req_msg->msg_len) {
+            abort();
+        }
+        return;
+    }
+#endif
+
     pthread_mutex_lock(&mnt->mnt_send_mtx);
     req->req_next = mnt->mnt_send_head;
     mnt->mnt_send_head = req;
-    if (mnt->mnt_send_waiters > 0) {
+    if (mnt->mnt_send_waiters > 0)
         pthread_cond_signal(&mnt->mnt_send_cv);
-    }
     pthread_mutex_unlock(&mnt->mnt_send_mtx);
 }
 
@@ -329,7 +342,7 @@ nct_req_create(nct_mnt_t *mnt)
 
     msgsz = sizeof(nct_msg_t) + NCT_MSGSZ_MAX;
     sz = (NCT_REQ_MAX + 1) * msgsz;
-    sz = (sz + (2 << 20) - 1) & ~((2 << 20) - 1);
+    sz = (sz + (2u << 20) - 1) & ~((2u << 20) - 1);
 
   again:
     msgbase = mmap(NULL, sz, prot, flags | super, -1, 0);
@@ -343,7 +356,7 @@ nct_req_create(nct_mnt_t *mnt)
         abort();
     }
 
-    tblsz = NCT_REQ_MAX * sizeof(req);
+    tblsz = NCT_REQ_MAX * sizeof(req) * 2;
     tblsz = (tblsz + 4096 - 1) & ~(4096 - 1);
 
     sz = NCT_REQ_MAX * sizeof(*req) + tblsz;
@@ -361,11 +374,8 @@ nct_req_create(nct_mnt_t *mnt)
         req = (nct_req_t *)reqbase + i;
 
         memset(req, 0, sizeof(*req));
-        req->req_idx = i;
         req->req_mnt = mnt;
         req->req_msg = msgbase + (i * msgsz);
-
-        mnt->mnt_req_tbl[req->req_idx] = req;
 
         pthread_mutex_lock(&mnt->mnt_send_mtx);
         req->req_next = mnt->mnt_req_head;

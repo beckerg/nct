@@ -31,6 +31,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
@@ -52,7 +53,7 @@ typedef struct {
     int     pr_duration;
 } test_read_priv_t;
 
-static size_t length = 512;
+static size_t length = 4096;
 static char *rhostpath;
 
 static clp_posparam_t posparamv[] = {
@@ -120,12 +121,9 @@ test_read_init(int argc, char **argv, int duration, start_t **startp, char **rho
     priv->pr_length = length;
     priv->pr_duration = duration;
 
-    if (argc > 2) {
-        priv->pr_length = strtoul(argv[2], NULL, 0);
-        if (priv->pr_length < 1024 || priv->pr_length > (NCT_MSGSZ_MAX - 1024)) {
-            eprint("invalid read length %zu\n", priv->pr_length);
-            abort();
-        }
+    if (priv->pr_length < 512 || priv->pr_length > NCT_MSGSZ_MAX) {
+        eprint("invalid read length %zu\n", priv->pr_length);
+        abort();
     }
 
     *startp = test_read_start;
@@ -177,6 +175,7 @@ test_read_start(void *arg)
     test_read_priv_t *priv = req->req_priv;
     off_t offset;
     int rc;
+    int i;
 
     req->req_tsc_finish = rdtsc() + (tsc_freq * priv->pr_duration);
     req->req_cb = test_read_cb;
@@ -190,8 +189,26 @@ test_read_start(void *arg)
         return NULL;
     }
 
+    usleep(1000);
+
     nct_nfs_read3_encode(req, offset, priv->pr_length);
     nct_req_send(req);
+
+    for (i = 0; i < 0; ++i) {
+        req = nct_req_alloc(mnt);
+
+        req->req_priv = priv;
+        req->req_argc = 0;
+        req->req_argv = NULL;
+
+        req->req_tsc_finish = rdtsc() + (tsc_freq * priv->pr_duration);
+        req->req_cb = test_read_cb;
+
+        offset = __sync_fetch_and_add(&priv->pr_offset, priv->pr_length);
+
+        nct_nfs_read3_encode(req, offset, priv->pr_length);
+        nct_req_send(req);
+    }
 
     while (1) {
         rc = nct_req_recv(mnt);

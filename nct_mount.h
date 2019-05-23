@@ -36,25 +36,25 @@
 
 typedef struct nct_mnt_s {
     pthread_mutex_t     mnt_send_mtx;
-    pthread_cond_t      mnt_send_cv;
     nct_req_t          *mnt_send_head;
     nct_req_t         **mnt_send_tail;
     int                 mnt_send_waiters;
+    pthread_cond_t      mnt_send_cv;
 
     __aligned(64)
     pthread_mutex_t     mnt_recv_mtx;
-    pthread_cond_t      mnt_recv_cv;
     nct_req_t          *mnt_recv_head;
     nct_req_t         **mnt_recv_tail;
     int                 mnt_recv_waiters;
+    pthread_cond_t      mnt_recv_cv;
 
     __aligned(64)
     pthread_mutex_t     mnt_req_mtx;
-    pthread_cond_t      mnt_req_cv;
     nct_req_t          *mnt_req_head;           // List of free reqs
     nct_req_t         **mnt_req_tbl;            // Indexed by req_idx
     int                 mnt_req_waiters;
     void               *mnt_req_msg;
+    pthread_cond_t      mnt_req_cv;
 
     __aligned(64)
     volatile uint64_t   mnt_stats_latency;      // Total latency of completed requests

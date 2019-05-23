@@ -18,7 +18,7 @@ Given an NFS server named "gw" exporting an 8GiB sparse file named
 that will continually read sequentially through the file until the
 test duration has elapsed.
 
-    $ ./nct -m -t16 -d10 read gw:/export/sparse-8192MB-0
+    $ ./nct -m -j16 -d10 read gw:/export/sparse-8192MB-0
     
      SAMPLES  DURATION      OPS    TXMB    RXMB    LATENCY
           10   1005439     1799    0.23  112.59    8840.91
@@ -34,7 +34,7 @@ test duration has elapsed.
 
 In the above example the the -m option tells nct to print a status mark once
 per second, while the -d10 says run the test for a duration of 10 seconds.
-The -t16 options tells nct to create 16 threads.  Each thread will read
+The -j16 option tells nct to create 16 threads.  Each thread will read
 sequentially through the file at the next offset (i.e., they all share
 the same offset and hence do not all read the same blocks).
 
@@ -46,7 +46,7 @@ collecting detailed stats.  The result of the -o opton is that gnuplot
 will be run on the collected data and generate a graph that can be
 viewed to examine the response curve.
 
-    $ ./nct -t16 -d10 -o ~/nct-read-1 read gw:/export/sparse-8192MB-0
+    $ ./nct -j16 -d10 -o ~/nct-read-1 read gw:/export/sparse-8192MB-0
     
              MIN          AVG          MAX  DESC
             1809         1818         1869  REQ/s (requests per second)
@@ -84,7 +84,7 @@ until the test duration has elapsed.
 
 In the following example we run the test with only 1 thread for 60 seconds:
 
-    $ ./nct -d60 -t1 -o ~/nct-getattr-1 getattr gw:/export/sparse-8192MB-0
+    $ ./nct -d60 -j1 -o ~/nct-getattr-1 getattr gw:/export/sparse-8192MB-0
 
 In this case, you're probably more interested in latency and so you would want
 to point your browser at file:///usr/home/${USER}/nct-getattr-1/latency.png.

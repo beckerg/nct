@@ -72,7 +72,7 @@ unsigned int jobs = 1;
 in_port_t port = 2049;
 char *term = "png";         // Term type for gnuplot
 char *outdir = NULL;
-long duration = 60;
+time_t duration = 60;
 char *command = NULL;
 char *args = NULL;
 bool mark = false;
@@ -94,7 +94,7 @@ static clp_option_t optionv[] = {
     CLP_OPTION_VERSION(version),
     CLP_OPTION_HELP,
 
-    CLP_OPTION(long, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
+    CLP_OPTION(time_t, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
     CLP_OPTION(u_int, 'j', jobs, NULL, NULL, "max number of concurrent jobs (worker threads)"),
     CLP_OPTION(bool, 'm', mark, NULL, NULL, "print a status mark once per second"),
     CLP_OPTION(string, 'o', outdir, NULL, NULL, "directory in which to store results"),

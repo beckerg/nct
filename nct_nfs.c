@@ -77,6 +77,7 @@ strerror_mountstat3(enum mountstat3 stat)
 void
 nct_nfs_mount(struct nct_mnt_s *mnt)
 {
+    const size_t rpcmin = BYTES_PER_XDR_UNIT * 6;
     char txbuf[1024], rxbuf[1024];
     struct sockaddr_in faddr;
     struct rpc_msg msg;
@@ -123,8 +124,7 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
         abort();
     }
 
-
-    msg.rm_xid = nct_rpc_xid();
+    msg.rm_xid = 0;
     msg.rm_direction = CALL;
     msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
     msg.rm_call.cb_prog = MOUNT_PROGRAM;
@@ -145,13 +145,14 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
     }
 
     cc = nct_rpc_recv(fd, rxbuf, sizeof(rxbuf));
-    if (cc < 24) {
-        eprint("nct_rpc_recv(%d, %p, %zu): %s\n",
-               fd, rxbuf, sizeof(rxbuf), (cc == -1) ? strerror(errno) : "EOF");
+    if (cc < rpcmin) {
+        eprint("nct_rpc_recv(%d, %p, %zu): cc %ld, %s\n",
+               fd, rxbuf, sizeof(rxbuf), cc,
+               (cc == -1) ? strerror(errno) : "EOF");
         abort();
     }
 
-    stat = nct_rpc_decode(&xdr, rxbuf + 4, cc - 4, &msg, &err);
+    stat = nct_rpc_decode(&xdr, rxbuf, cc, &msg, &err);
     if (stat != RPC_SUCCESS) {
         eprint("nct_rpc_decode(%p, %ld) failed: %d %s\n",
                rxbuf, cc, stat, clnt_sperrno(stat));
@@ -220,9 +221,7 @@ nct_nfs_null_encode(nct_req_t *req)
     struct rpc_msg msg;
     int len;
 
-    req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
-
-    msg.rm_xid = req->req_xid;
+    msg.rm_xid = 0;
     msg.rm_direction = CALL;
     msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
     msg.rm_call.cb_prog = NFS_PROGRAM;
@@ -243,9 +242,7 @@ nct_nfs_getattr3_encode(nct_req_t *req)
     struct rpc_msg msg;
     int len;
 
-    req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
-
-    msg.rm_xid = req->req_xid;
+    msg.rm_xid = 0;
     msg.rm_direction = CALL;
     msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
     msg.rm_call.cb_prog = NFS_PROGRAM;
@@ -267,9 +264,7 @@ nct_nfs_read3_encode(nct_req_t *req, off_t offset, size_t length)
     read3_args args;
     int len;
 
-    req->req_xid = (nct_rpc_xid() << NCT_REQ_SHIFT) | req->req_idx;
-
-    msg.rm_xid = req->req_xid;
+    msg.rm_xid = 0;
     msg.rm_direction = CALL;
     msg.rm_call.cb_rpcvers = RPC_MSG_VERSION;
     msg.rm_call.cb_prog = NFS_PROGRAM;

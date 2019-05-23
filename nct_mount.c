@@ -99,18 +99,24 @@ nct_mount(const char *path, in_port_t port)
     nct_mnt_t *mnt;
     nct_req_t *req;
     size_t mntsz;
+    size_t align;
     int pathlen;
     char *pc;
     int rc;
 
     pathlen = strlen(path);
+
+    align = __alignof(*mnt);
     mntsz = sizeof(*mnt) + pathlen + 1;
-    mnt = calloc(1, mntsz);
+    mntsz = (mntsz + align - 1) & ~(align - 1);
+
+    mnt = aligned_alloc(align, mntsz);
     if (!mnt) {
         eprint("calloc(%zu) failed\n", mntsz);
         return NULL;
     }
 
+    memset(mnt, 0, mntsz);
     memcpy(mnt->mnt_args, path, pathlen + 1);
 
     mnt->mnt_server = mnt->mnt_args;

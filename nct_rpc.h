@@ -77,9 +77,7 @@ extern int nct_rpc_encode(struct rpc_msg *msg, AUTH *auth,
                           xdrproc_t xdrproc, void *args,
                           char *buf, int bufsz);
 
-extern uint32_t nct_rpc_xid(void);
-
-extern ssize_t nct_rpc_send(int fd, const void *buf, size_t len);
+extern ssize_t nct_rpc_send(int fd, void *buf, size_t len);
 extern ssize_t nct_rpc_recv(int fd, void *buf, size_t len);
 
 extern enum clnt_stat nct_rpc_decode(XDR *xdr, char *buf, int len,

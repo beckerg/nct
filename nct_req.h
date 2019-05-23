@@ -32,7 +32,7 @@
 
 /* TODO: Make this setable via the command line
  */
-#define NCT_MSGSZ_MAX      (1024 * 129)    // Max message size, including headers
+#define NCT_MSGSZ_MAX      (1024 * 256 - sizeof(struct nct_msg_s))
 
 struct nct_mnt_s;
 struct nct_req_s;
@@ -40,13 +40,13 @@ struct nct_req_s;
 typedef int nct_req_cb_t(struct nct_req_s *req);
 
 typedef struct nct_msg_s {
-    __aligned(64)
     XDR                 msg_xdr;            // RPC reply xdr
     struct rpc_msg      msg_rpc;            // RPC reply message
     struct rpc_err      msg_err;            // RPC reply error
     enum clnt_stat      msg_stat;           // RPC reply status code
-
     size_t              msg_len;            // TX/RX message length
+
+    __aligned(64)
     char                msg_data[];         // TX/RX message buffer (NCT_MSGSZ_MAX)
 } nct_msg_t;
 
@@ -56,7 +56,6 @@ typedef struct nct_req_s {
     struct nct_req_s  **req_prev;
 
     uint32_t            req_xid;
-    uint32_t            req_idx;
     nct_req_cb_t       *req_cb;
     int                 req_done;
     nct_msg_t          *req_msg;
