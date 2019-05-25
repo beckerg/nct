@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdatomic.h>
 #include <string.h>
 #include <ctype.h>
@@ -76,13 +77,16 @@ nct_rpc_send(int fd, void *buf, size_t bufsz)
 }
 
 ssize_t
-nct_rpc_recv(int fd, void *buf, size_t bufsz)
+nct_rpc_recv(int fd, void *buf, size_t bufsz, uint32_t *markp)
 {
-    static uint32_t mark = 0;
-    const size_t marksz = sizeof(mark);
+    const size_t marksz = sizeof(*markp);
+    uint32_t mark, recsz;
     size_t nleft;
-    ssize_t len;
     ssize_t cc;
+    bool last;
+
+  again:
+    mark = markp ? *markp : 0;
 
     if (mark == 0) {
         cc = recv(fd, &mark, marksz, MSG_WAITALL);
@@ -91,18 +95,16 @@ nct_rpc_recv(int fd, void *buf, size_t bufsz)
     }
 
     mark = ntohl(mark);
+    last = (mark & 0x80000000u);
 
-    if (!(mark & 0x80000000u))
+    recsz = mark & ~0x80000000u;
+    if (recsz + marksz > bufsz)
         abort();
 
-    mark &= ~0x80000000u;
-    if (mark + marksz > bufsz)
-        abort();
-
-    /* Try to read the next mark...
+    /* Try to read the mark following this record to eliminate
+     * the mark read on the next call to this function.
      */
-    nleft = mark + marksz;
-    len = mark;
+    nleft = recsz + (markp ? marksz : 0);
 
     while (nleft > 0) {
         cc = recv(fd, buf, nleft, 0);
@@ -110,17 +112,26 @@ nct_rpc_recv(int fd, void *buf, size_t bufsz)
             return (cc == -1) ? -1 : 0;
 
         nleft -= cc;
+        bufsz -= cc;
         buf += cc;
 
-        if (nleft == marksz) {
-            mark = 0;
-            return len;
+        if (last && nleft == marksz) {
+            if (markp)
+                *markp = 0;
+            return recsz;
         }
     }
 
-    memcpy(&mark, buf - marksz, marksz);
+    if (markp) {
+        bufsz += marksz;
+        buf -= marksz;
+        memcpy(markp, buf, marksz);
+    }
 
-    return len;
+    if (!last)
+        goto again;
+
+    return recsz;
 }
 
 int

@@ -78,7 +78,7 @@ extern int nct_rpc_encode(struct rpc_msg *msg, AUTH *auth,
                           char *buf, int bufsz);
 
 extern ssize_t nct_rpc_send(int fd, void *buf, size_t len);
-extern ssize_t nct_rpc_recv(int fd, void *buf, size_t len);
+extern ssize_t nct_rpc_recv(int fd, void *buf, size_t len, uint32_t *markp);
 
 extern enum clnt_stat nct_rpc_decode(XDR *xdr, char *buf, int len,
                                      struct rpc_msg *rpc_msg, struct rpc_err *rpc_err);

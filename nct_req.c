@@ -56,69 +56,20 @@
 #include "nct_rpc.h"
 #include "nct_req.h"
 
-void *
-nct_req_send_loop(void *arg)
-{
-    nct_mnt_t *mnt = arg;
-    uint32_t xid = rdtsc();
-
-    while (1) {
-        nct_req_t *head, *req;
-        ssize_t cc;
-
-        pthread_mutex_lock(&mnt->mnt_send_mtx);
-        while (!mnt->mnt_send_head) {
-            ++mnt->mnt_send_waiters;
-            pthread_cond_wait(&mnt->mnt_send_cv, &mnt->mnt_send_mtx);
-            --mnt->mnt_send_waiters;
-
-            if (mnt->mnt_worker_cnt < 1 && !mnt->mnt_send_head) {
-                pthread_mutex_unlock(&mnt->mnt_send_mtx);
-
-                dprint(3, "exiting due to no workers...\n");
-                pthread_exit(NULL);
-            }
-        }
-
-        head = mnt->mnt_send_head;
-        mnt->mnt_send_head = NULL;
-        pthread_mutex_unlock(&mnt->mnt_send_mtx);
-
-        while (( req = head )) {
-            struct rpc_msg *msg;
-
-            head = req->req_next;
-            req->req_tsc_start = rdtsc();
-
-            msg = (void *)req->req_msg->msg_data + 4;
-            msg->rm_xid = htonl(xid);
-            mnt->mnt_req_tbl[xid % NCT_REQ_MAX] = req;
-            req->req_xid = xid++;
-
-            cc = nct_rpc_send(mnt->mnt_fd, req->req_msg->msg_data, req->req_msg->msg_len);
-            if (cc != req->req_msg->msg_len) {
-                eprint("nct_rpc_send() failed: %s\n",
-                       (cc == -1) ? strerror(errno) : "eof or short write");
-
-                sleep(1);   // Give time for nct_rx_main() to reconnect
-
-                head = req; // Re-issue this request
-            }
-        }
-    }
-
-    pthread_exit(NULL);
-}
+uint32_t xid;
 
 void *
 nct_req_recv_loop(void *arg)
 {
     nct_mnt_t *mnt = arg;
     nct_msg_t *msg;
+    uint32_t mark;
     int rc;
 
     msg = mnt->mnt_req_msg;
     assert(msg);
+
+    mark = 0;
 
     while (1) {
         const size_t rpcmin = BYTES_PER_XDR_UNIT * 6;
@@ -129,7 +80,7 @@ nct_req_recv_loop(void *arg)
         u_int idx;
         int i;
 
-        cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX);
+        cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX, &mark);
         if (cc < rpcmin) {
             if (mnt->mnt_worker_cnt < 1) {
                 dprint(3, "exiting due to no workers...\n");
@@ -154,6 +105,7 @@ nct_req_recv_loop(void *arg)
                 }
             }
 
+            mark = 0;
             continue;
         }
 
@@ -217,28 +169,22 @@ void
 nct_req_send(nct_req_t *req)
 {
     nct_mnt_t *mnt = req->req_mnt;
+    struct rpc_msg *msg;
+    ssize_t cc;
 
+    msg = (void *)req->req_msg->msg_data + 4;
     req->req_done = 0;
 
-#if 0
-    if (mnt->mnt_worker_cnt == 1) {
-        ssize_t cc;
-
-        req->req_tsc_start = rdtsc();
-
-        cc = nct_rpc_send(mnt->mnt_fd, req->req_msg->msg_data, req->req_msg->msg_len);
-        if (cc != req->req_msg->msg_len) {
-            abort();
-        }
-        return;
-    }
-#endif
-
     pthread_mutex_lock(&mnt->mnt_send_mtx);
-    req->req_next = mnt->mnt_send_head;
-    mnt->mnt_send_head = req;
-    if (mnt->mnt_send_waiters > 0)
-        pthread_cond_signal(&mnt->mnt_send_cv);
+    req->req_tsc_start = rdtsc();
+    msg->rm_xid = htonl(xid);
+    mnt->mnt_req_tbl[xid % NCT_REQ_MAX] = req;
+    req->req_xid = xid++;
+
+    cc = nct_rpc_send(mnt->mnt_fd, req->req_msg->msg_data, req->req_msg->msg_len);
+    if (cc != req->req_msg->msg_len) {
+        // TODO...
+    }
     pthread_mutex_unlock(&mnt->mnt_send_mtx);
 }
 

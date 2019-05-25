@@ -226,12 +226,6 @@ nct_mount(const char *path, in_port_t port)
 
     nct_req_create(mnt);
 
-    rc = pthread_create(&mnt->mnt_send_td, NULL, nct_req_send_loop, mnt);
-    if (rc) {
-        eprint("pthread_create() failed: %s\n", strerror(errno));
-        abort();
-    }
-
     rc = pthread_create(&mnt->mnt_recv_td, NULL, nct_req_recv_loop, mnt);
     if (rc) {
         eprint("pthread_create() failed: %s\n", strerror(errno));
@@ -305,11 +299,6 @@ nct_umount(nct_mnt_t *mnt)
     pthread_cond_broadcast(&mnt->mnt_send_cv);
     pthread_cond_broadcast(&mnt->mnt_recv_cv);
 
-    rc = pthread_join(mnt->mnt_send_td, &val);
-    if (rc) {
-        abort();
-    }
-
     rc = pthread_join(mnt->mnt_recv_td, &val);
     if (rc) {
         abort();
@@ -332,6 +321,5 @@ nct_mnt_print(nct_mnt_t *mnt)
     dprint(1, "port     %u\n", mnt->mnt_port);
     dprint(1, "fd       %d\n", mnt->mnt_fd);
     dprint(1, "auth     %p\n", mnt->mnt_auth);
-    dprint(1, "send     %p\n", (void *)mnt->mnt_send_td);
     dprint(1, "recv     %p\n", (void *)mnt->mnt_recv_td);
 }

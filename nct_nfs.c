@@ -144,7 +144,7 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
         abort();
     }
 
-    cc = nct_rpc_recv(fd, rxbuf, sizeof(rxbuf));
+    cc = nct_rpc_recv(fd, rxbuf, sizeof(rxbuf), NULL);
     if (cc < rpcmin) {
         eprint("nct_rpc_recv(%d, %p, %zu): cc %ld, %s\n",
                fd, rxbuf, sizeof(rxbuf), cc,

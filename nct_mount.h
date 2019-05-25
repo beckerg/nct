@@ -74,7 +74,6 @@ typedef struct nct_mnt_s {
     struct sockaddr_in  mnt_faddr;              // Foriegn/filer address
 
     pthread_t           mnt_recv_td;
-    pthread_t           mnt_send_td;
     int                 mnt_worker_cnt;
     char                mnt_hostname[_POSIX_HOST_NAME_MAX + 1];
     char                mnt_args[];
