@@ -41,7 +41,7 @@ typedef struct {
     uint64_t           xsr_throughput_recv;     // Total bytes rcvd in the sample period
     uint64_t           xsr_latency;             // Total latency of all ops in the sample
 } nct_statsrec_t;
-    
+
 /*
  * The time-stamp counter on recent Intel processors is reset to zero each time
  * the processor package has RESET asserted. From that point onwards the invariant
@@ -65,11 +65,11 @@ extern uint64_t tsc_freq;
 static inline uint64_t
 rdtsc(void)
 {
-	uint32_t low, high;
+    uint32_t low, high;
 
-	__asm __volatile("rdtsc" : "=a" (low), "=d" (high));
+    __asm __volatile("rdtsc" : "=a" (low), "=d" (high));
 
-	return (low | ((u_int64_t)high << 32));
+    return (low | ((u_int64_t)high << 32));
 }
 
 #else
@@ -98,7 +98,8 @@ extern void nct_req_free(nct_req_t *req);
 extern void nct_worker_create(nct_mnt_t *mnt, start_t *start, void *arg);
 extern void nct_worker_exit(nct_mnt_t *mnt);
 
-extern void nct_stats_loop(nct_mnt_t *mnt, long duration, int mark,
-                            const char *outfile, const char *gplot_term);
+extern void nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
+                           long sample_interval, nct_statsrec_t *base,
+                           const char *outfile, const char *gplot_term);
 
 #endif /* NCT_H */

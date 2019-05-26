@@ -75,7 +75,7 @@ char *outdir = NULL;
 time_t duration = 60;
 char *command = NULL;
 char *args = NULL;
-bool mark = false;
+u_int mark = 0;
 
 static clp_posparam_t posparamv[] = {
     { .name = "command",
@@ -96,7 +96,7 @@ static clp_option_t optionv[] = {
 
     CLP_OPTION(time_t, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
     CLP_OPTION(u_int, 'j', jobs, NULL, NULL, "max number of concurrent jobs (worker threads)"),
-    CLP_OPTION(bool, 'm', mark, NULL, NULL, "print a status mark once per second"),
+    CLP_OPTION(u_int, 'm', mark, NULL, NULL, "print status every mark seconds"),
     CLP_OPTION(string, 'o', outdir, NULL, NULL, "directory in which to store results"),
     CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "remote NFSd port"),
     CLP_OPTION(string, 'T', term, NULL, NULL, "terminal type for gnuplot"),
@@ -242,6 +242,15 @@ main(int argc, char **argv)
         abort();
     }
 
+    const long sample_interval = 100 * 1000;
+    const long samples_per_sec = 1000000 / sample_interval;
+    const size_t srec_cnt = duration * samples_per_sec;
+    nct_statsrec_t *statsbuf;
+
+    statsbuf = malloc(sizeof(*statsbuf) * srec_cnt);
+    if (!statsbuf)
+        abort();
+
     for (i = 0; i < jobs; ++i) {
         req = nct_req_alloc(mnt);
 
@@ -252,9 +261,13 @@ main(int argc, char **argv)
         nct_worker_create(mnt, start, req);
     }
 
-    nct_stats_loop(mnt, duration, mark, outdir, term);
+    nct_stats_loop(mnt, duration, mark,
+                   sample_interval, statsbuf,
+                   outdir, term);
 
     nct_umount(mnt);
+
+    free(statsbuf);
 
     return 0;
 }
