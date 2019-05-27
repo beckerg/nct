@@ -242,14 +242,18 @@ main(int argc, char **argv)
         abort();
     }
 
-    const long sample_interval = 100 * 1000;
-    const long samples_per_sec = 1000000 / sample_interval;
-    const size_t srec_cnt = duration * samples_per_sec;
-    nct_statsrec_t *statsbuf;
+    const long sample_period = 100 * 1000;
+    nct_statsrec_t *statsv = NULL;
+    u_int statsc = 0;
 
-    statsbuf = malloc(sizeof(*statsbuf) * srec_cnt);
-    if (!statsbuf)
-        abort();
+    if (outdir) {
+        long samples_per_sec = 1000000 / sample_period;
+        statsc = (duration + 1) * samples_per_sec;
+
+        statsv = malloc(sizeof(*statsv) * statsc);
+        if (!statsv)
+            abort();
+    }
 
     for (i = 0; i < jobs; ++i) {
         req = nct_req_alloc(mnt);
@@ -261,13 +265,12 @@ main(int argc, char **argv)
         nct_worker_create(mnt, start, req);
     }
 
-    nct_stats_loop(mnt, duration, mark,
-                   sample_interval, statsbuf,
-                   outdir, term);
+    nct_stats_loop(mnt, mark, sample_period, duration,
+                   statsv, statsc, outdir, term);
 
     nct_umount(mnt);
 
-    free(statsbuf);
+    free(statsv);
 
     return 0;
 }

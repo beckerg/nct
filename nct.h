@@ -98,8 +98,9 @@ extern void nct_req_free(nct_req_t *req);
 extern void nct_worker_create(nct_mnt_t *mnt, start_t *start, void *arg);
 extern void nct_worker_exit(nct_mnt_t *mnt);
 
-extern void nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
-                           long sample_interval, nct_statsrec_t *base,
+extern void nct_stats_loop(nct_mnt_t *mnt, uint mark,
+                           long sample_period, long duration,
+                           nct_statsrec_t *statsv, u_int statsc,
                            const char *outfile, const char *gplot_term);
 
 #endif /* NCT_H */

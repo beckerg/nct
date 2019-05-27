@@ -179,67 +179,66 @@ nct_gplot(long nsamples, long sampersec, const char *term, const char *using,
  * has dropped to zero.
  */
 void
-nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
-               long sample_interval, nct_statsrec_t *statsbuf,
+nct_stats_loop(nct_mnt_t *mnt, u_int mark,
+               long sample_period_usec, long duration,
+               nct_statsrec_t *statsv, u_int statsc,
                const char *outdir, const char *term)
 {
     uint64_t throughput_send_cur, throughput_send_last;
     uint64_t throughput_recv_cur, throughput_recv_last;
     double throughput_send_avg, throughput_recv_avg;
     uint64_t latency_cur, latency_prev, latency_avg;
-    uint64_t tsc_cur, tsc_prev, tsc_last, tsc_interval;
+    uint64_t tsc_cur, tsc_last, tsc_interval;
     nct_statsrec_t *cur, *prev, *end;
     uint64_t reqs_cur, reqs_last;
-    long delta, delay, loops;
     uint64_t tsc_start;
     long samples_tot;
+    long loops;
 
-    const long samples_per_sec = 1000000 / sample_interval;
-    const long print_interval = tsc_freq * mark;
-
-    prev = cur = end = NULL;
-
-    if (outdir) {
-        bzero(statsbuf, sizeof(*statsbuf));
-        prev = statsbuf;
-        cur = statsbuf + 1;
-        end = statsbuf + duration * samples_per_sec;
-
-        prev->xsr_duration = rdtsc();
-    }
+    const long samples_per_sec = 1000000 / sample_period_usec;
+    long print_period = mark * tsc_freq;
+    long sample_period;
 
     throughput_send_last = 0;
     throughput_recv_last = 0;
     latency_prev = 0;
     samples_tot = 0;
     reqs_last = 0;
-    delta = 0;
     loops = 0;
 
-    tsc_start = tsc_cur = tsc_prev = tsc_last = rdtsc();
-    tsc_prev -= sample_interval;
+    cur = end = NULL;
+
+    if (statsv && statsc > 0) {
+        bzero(statsv, sizeof(*statsv));
+        end = statsv + duration * samples_per_sec;
+        cur = statsv + 1;
+    }
+
+    tsc_start = tsc_cur = tsc_last = rdtsc();
+    if (statsv)
+        statsv->xsr_duration = tsc_cur;
+
+    sample_period = (sample_period_usec * tsc_freq) / 1000000ul;
+    if (print_period >= sample_period)
+        print_period -= (sample_period / 2);
 
     while (1) {
         char latency_buf[32];
+        long tgt, delta;
 
         ++samples_tot;
 
-        delay = tsc_cur - tsc_prev;
+        tgt = tsc_start + samples_tot * sample_period;
+
 #ifdef USE_TSC
-        delay = (delay * 1000000ul) / tsc_freq;
+        delta = ((tgt - tsc_cur) * 1000000ul) / tsc_freq;
+#else
+        delta = tgt - tsc_cur;
 #endif
 
-        delta = (delta + (sample_interval - delay)) / 2;
-        delay = sample_interval + delta;
+        if (delta > 999)
+            usleep(delta - 999);
 
-#if 0
-        dprint(0, "%4ld, %8lu - %8lu -> %8lu, %8ld %8ld\n",
-               loops, tsc_cur, tsc_prev, tsc_cur - tsc_prev, delay, delta);
-#endif
-
-        usleep(delay - 999);
-
-        tsc_prev = tsc_cur;
         tsc_cur = rdtsc();
 
         latency_cur = mnt->mnt_stats_latency;
@@ -265,7 +264,7 @@ nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
             continue;
         }
 
-        if (tsc_cur - tsc_last < print_interval)
+        if (tsc_cur - tsc_last < print_period)
             continue;
 
         tsc_interval = ((tsc_cur - tsc_last) * 1000000ul) / tsc_freq;
@@ -304,7 +303,7 @@ nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
         tsc_last = tsc_cur;
     }
 
-    if (outdir) {
+    if (statsv && statsc > 0 && outdir) {
         uint64_t throughput_send_min, throughput_send_max, throughput_send_tot, throughput_send;
         uint64_t throughput_recv_min, throughput_recv_max, throughput_recv_tot, throughput_recv;
         uint64_t requests_min, requests_max, requests_tot, requests;
@@ -324,7 +323,7 @@ nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
         fprintf(fpraw, "# Created on %s", ctime(&now));
         fprintf(fpraw, "# %ld samples\n", samples_tot);
         fprintf(fpraw, "# %ld samples/sec\n", samples_per_sec);
-        fprintf(fpraw, "# %ld sample interval (usecs)\n", sample_interval);
+        fprintf(fpraw, "# %ld sample period (usecs)\n", sample_period_usec);
         fprintf(fpraw, "# time, duration, and latency in usecs\n");
         fprintf(fpraw, "# send and recv in bytes\n");
         fprintf(fpraw, "#\n");
@@ -336,8 +335,8 @@ nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
         if (cur)
             end = cur - 1;      // Ignore the last sample
 
-        cur = statsbuf + 1;
-        prev = statsbuf;
+        cur = statsv + 1;
+        prev = statsv;
         tail = cur;
 
         requests_min = latency_min = throughput_send_min = throughput_recv_min = ULONG_MAX;
@@ -410,7 +409,7 @@ nct_stats_loop(nct_mnt_t *mnt, long duration, u_int mark,
 
         /* Print summary statistics...
          */
-        samples_tot = cur - statsbuf;
+        samples_tot = cur - statsv;
 
         printf("\n%12s %12s %12s  %s\n", "MIN", "AVG", "MAX", "DESC");
 
