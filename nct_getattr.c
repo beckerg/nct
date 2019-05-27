@@ -70,8 +70,8 @@ static clp_option_t optionv[] = {
     CLP_OPTION_END
 };
 
-static void *test_getattr_start(void *arg);
-static int test_getattr_cb(nct_req_t *req);
+static int test_getattr_start(struct nct_req *req);
+static int test_getattr_cb(struct nct_req *req);
 
 static bool
 given(int c)
@@ -115,7 +115,7 @@ test_getattr_init(int argc, char **argv, int duration, start_t **startp, char **
 }
 
 static int
-test_getattr_cb(nct_req_t *req)
+test_getattr_cb(struct nct_req *req)
 {
     enum clnt_stat stat;
     getattr3_res res;
@@ -146,37 +146,25 @@ test_getattr_cb(nct_req_t *req)
         return ETIMEDOUT;
     }
 
+    req->req_tsc_start = rdtsc();
     nct_nfs_getattr3_encode(req);
     nct_req_send(req);
 
     return 0;
 }
 
-static void *
-test_getattr_start(void *arg)
+static int
+test_getattr_start(struct nct_req *req)
 {
-    nct_req_t *req = arg;
-    nct_mnt_t *mnt = req->req_mnt;
     test_getattr_priv_t *priv = req->req_priv;
-    int rc;
 
     req->req_tsc_finish = rdtsc() + (tsc_freq * priv->pr_duration);
     req->req_cb = test_getattr_cb;
 
+    req->req_tsc_start = rdtsc();
     nct_nfs_getattr3_encode(req);
     nct_req_send(req);
 
-    while (1) {
-        rc = nct_req_recv(mnt);
-        if (rc) {
-            break;
-        }
-    }
-
-    dprint(2, "exiting: %s", strerror(rc));
-
-    nct_worker_exit(mnt);
-
-    return NULL;
+    return 0;
 }
 

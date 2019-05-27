@@ -34,33 +34,47 @@
 #define __aligned(_n)   __attribute__((__aligned__(_n)))
 #endif
 
+#ifndef NELEM
+#define NELEM(_a)       (sizeof((_a)) / sizeof((_a)[0]))
+#endif
+
+struct nct_stats {
+    uint64_t            latency;      // Total latency of completed requests
+    uint64_t            requests;     // Total number of requests completed
+    uint64_t            thruput_send;
+    uint64_t            thruput_recv;
+    uint64_t            updates;
+};
+
 typedef struct nct_mnt_s {
     pthread_mutex_t     mnt_send_mtx;
-    nct_req_t          *mnt_send_head;
-    nct_req_t         **mnt_send_tail;
-    int                 mnt_send_waiters;
+    uint32_t            mnt_send_xid;
     pthread_cond_t      mnt_send_cv;
 
     __aligned(64)
     pthread_mutex_t     mnt_recv_mtx;
-    nct_req_t          *mnt_recv_head;
-    nct_req_t         **mnt_recv_tail;
-    int                 mnt_recv_waiters;
-    pthread_cond_t      mnt_recv_cv;
+    uint32_t            mnt_recv_mark;
+
+    __aligned(64)
+    pthread_mutex_t     mnt_wait_mtx;
+    int                 mnt_wait_waiters;
+    pthread_cond_t      mnt_wait_cv;
 
     __aligned(64)
     pthread_mutex_t     mnt_req_mtx;
     nct_req_t          *mnt_req_head;           // List of free reqs
     nct_req_t         **mnt_req_tbl;            // Indexed by req_idx
     int                 mnt_req_waiters;
-    void               *mnt_req_msg;
     pthread_cond_t      mnt_req_cv;
 
     __aligned(64)
-    volatile uint64_t   mnt_stats_latency;      // Total latency of completed requests
-    volatile uint64_t   mnt_stats_requests;     // Total number of requests completed
-    volatile uint64_t   mnt_stats_throughput_send;
-    volatile uint64_t   mnt_stats_throughput_recv;
+    pthread_spinlock_t  mnt_stats_spin;
+    struct nct_stats    mnt_stats;
+
+    __aligned(64)
+    u_int               mnt_jobs_max;
+    u_int               mnt_jobs_cnt;
+    u_int               mnt_tds_max;
 
     __aligned(64)
     int                 mnt_fd;
@@ -73,13 +87,12 @@ typedef struct nct_mnt_s {
     in_port_t           mnt_port;
     struct sockaddr_in  mnt_faddr;              // Foriegn/filer address
 
-    pthread_t           mnt_recv_td;
-    int                 mnt_worker_cnt;
     char                mnt_hostname[_POSIX_HOST_NAME_MAX + 1];
+    pthread_t           mnt_recv_tdv[128];
     char                mnt_args[];
 } nct_mnt_t;
 
-extern nct_mnt_t *nct_mount(const char *path, in_port_t port);
+extern nct_mnt_t *nct_mount(const char *path, in_port_t port, u_int tds_max, u_int jobs_max);
 extern void nct_umount(nct_mnt_t *mnt);
 extern void nct_mnt_print(nct_mnt_t *mnt);
 

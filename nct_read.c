@@ -81,8 +81,8 @@ static clp_option_t optionv[] = {
     CLP_OPTION_END
 };
 
-static void *test_read_start(void *arg);
-static int test_read_cb(nct_req_t *req);
+static int test_read_start(struct nct_req *req);
+static int test_read_cb(struct nct_req *req);
 
 static bool
 given(int c)
@@ -133,7 +133,7 @@ test_read_init(int argc, char **argv, int duration, start_t **startp, char **rho
 }
 
 static int
-test_read_cb(nct_req_t *req)
+test_read_cb(struct nct_req *req)
 {
     test_read_priv_t *priv = req->req_priv;
     nct_mnt_t *mnt = req->req_mnt;
@@ -160,22 +160,20 @@ test_read_cb(nct_req_t *req)
         offset = __sync_fetch_and_sub(&priv->pr_offset, priv->pr_offset);
     }
 
+    req->req_tsc_start = rdtsc();
     nct_nfs_read3_encode(req, offset, priv->pr_length);
     nct_req_send(req);
 
     return 0;
 }
 
-static void *
-test_read_start(void *arg)
+static int
+test_read_start(struct nct_req *req)
 {
-    nct_req_t *req = arg;
+    test_read_priv_t *priv = req->req_priv;
     nct_mnt_t *mnt = req->req_mnt;
     nct_vn_t *vn = mnt->mnt_vn;
-    test_read_priv_t *priv = req->req_priv;
     off_t offset;
-    int rc;
-    int i;
 
     req->req_tsc_finish = rdtsc() + (tsc_freq * priv->pr_duration);
     req->req_cb = test_read_cb;
@@ -185,41 +183,14 @@ test_read_start(void *arg)
     if (offset + priv->pr_length > vn->xvn_fattr.size) {
         eprint("file smaller than request length: size=%lu length=%zu\n",
                vn->xvn_fattr.size, priv->pr_length);
-        nct_worker_exit(mnt);
-        return NULL;
+        return EINVAL;
     }
 
     usleep(1000);
 
+    req->req_tsc_start = rdtsc();
     nct_nfs_read3_encode(req, offset, priv->pr_length);
     nct_req_send(req);
 
-    for (i = 0; i < 0; ++i) {
-        req = nct_req_alloc(mnt);
-
-        req->req_priv = priv;
-        req->req_argc = 0;
-        req->req_argv = NULL;
-
-        req->req_tsc_finish = rdtsc() + (tsc_freq * priv->pr_duration);
-        req->req_cb = test_read_cb;
-
-        offset = __sync_fetch_and_add(&priv->pr_offset, priv->pr_length);
-
-        nct_nfs_read3_encode(req, offset, priv->pr_length);
-        nct_req_send(req);
-    }
-
-    while (1) {
-        rc = nct_req_recv(mnt);
-        if (rc) {
-            break;
-        }
-    }
-
-    dprint(2, "exiting: %s\n", strerror(rc));
-
-    nct_worker_exit(mnt);
-
-    return NULL;
+    return 0;
 }

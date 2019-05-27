@@ -56,20 +56,36 @@
 #include "nct_rpc.h"
 #include "nct_req.h"
 
-uint32_t xid;
-
 void *
 nct_req_recv_loop(void *arg)
 {
+    struct nct_stats stats;
+    uint64_t tsc_stats, tsc_stop;
     nct_mnt_t *mnt = arg;
+    nct_req_t *req0;
+    uint32_t *markp;
     nct_msg_t *msg;
-    uint32_t mark;
     int rc;
 
-    msg = mnt->mnt_req_msg;
+    req0 = nct_req_alloc(mnt);
+    if (!req0)
+        abort();
+
+    msg = req0->req_msg;
     assert(msg);
 
-    mark = 0;
+    /* Don't wait for a subsequent RPC record mark if there isn't
+     * sufficient parallelism.
+     */
+    markp = (mnt->mnt_jobs_max > 2) ? &mnt->mnt_recv_mark : NULL;
+
+    /* Update the mount stats record at most once per millisecond
+     * to reduce contention.
+     */
+    bzero(&stats, sizeof(stats));
+    tsc_stats = (rdtsc() % 777) * 1000;
+    tsc_stats = (tsc_stats * 1000000) / tsc_freq;
+    tsc_stats += rdtsc();
 
     while (1) {
         const size_t rpcmin = BYTES_PER_XDR_UNIT * 6;
@@ -80,19 +96,24 @@ nct_req_recv_loop(void *arg)
         u_int idx;
         int i;
 
-        cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX, &mark);
+        pthread_mutex_lock(&mnt->mnt_recv_mtx);
+        cc = nct_rpc_recv(mnt->mnt_fd, msg->msg_data, NCT_MSGSZ_MAX, markp);
+
         if (cc < rpcmin) {
-            if (mnt->mnt_worker_cnt < 1) {
-                dprint(3, "exiting due to no workers...\n");
+            mnt->mnt_recv_mark = 0;
+            pthread_mutex_unlock(&mnt->mnt_recv_mtx);
+
+            if (cc == 0)
                 break;
-            }
 
             eprint("nct_rpc_recv() failed: %s\n", (cc == -1) ? strerror(errno) : "eof");
 
+            /* TODO: Need to rework the reconnect logic now
+             * that we can have multiple recv threads...
+             */
             rc = nct_connect(mnt);
-            if (rc) {
+            if (rc)
                 abort();
-            }
 
             /* Re-send all the pending inflight requests.
              */
@@ -100,14 +121,14 @@ nct_req_recv_loop(void *arg)
                 req = mnt->mnt_req_tbl[i];
                 if (req->req_tsc_start > req->req_tsc_stop) {
                     req->req_tsc_stop = rdtsc();
-                    mnt->mnt_stats_latency += req->req_tsc_stop - req->req_tsc_start;
+                    mnt->mnt_stats.latency += req->req_tsc_stop - req->req_tsc_start;
                     nct_req_send(req);
                 }
             }
 
-            mark = 0;
             continue;
         }
+        pthread_mutex_unlock(&mnt->mnt_recv_mtx);
 
         stat = nct_rpc_decode(&msg->msg_xdr, msg->msg_data, cc, &msg->msg_rpc, &msg->msg_err);
 
@@ -117,27 +138,26 @@ nct_req_recv_loop(void *arg)
 
             /* TODO: For which errors is rm_xid not valid?
              */
-            if (stat == RPC_CANTDECODERES) {
+            if (stat == RPC_CANTDECODERES)
                 abort();
-            }
         }
 
         idx = msg->msg_rpc.rm_xid % NCT_REQ_MAX;
         req = mnt->mnt_req_tbl[idx];
         mnt->mnt_req_tbl[idx] = NULL;
 
-        if (req->req_xid != msg->msg_rpc.rm_xid) {
+        if (req->req_xid != msg->msg_rpc.rm_xid)
             abort();
-        }
 
         req->req_tsc_stop = rdtsc();
+        tsc_stop = req->req_tsc_stop;
 
         /* Update cumulative stats.
          */
-        mnt->mnt_stats_latency += req->req_tsc_stop - req->req_tsc_start;
-        mnt->mnt_stats_throughput_send += req->req_msg->msg_len;
-        mnt->mnt_stats_throughput_recv += cc;
-        mnt->mnt_stats_requests++;
+        stats.latency += req->req_tsc_stop - req->req_tsc_start;
+        stats.thruput_send += req->req_msg->msg_len;
+        stats.thruput_recv += cc;
+        stats.requests++;
 
         msg->msg_len = cc;
         msg->msg_stat = stat;
@@ -148,65 +168,74 @@ nct_req_recv_loop(void *arg)
         req->req_msg = msg;
         msg = tmp;
 
-        pthread_mutex_lock(&mnt->mnt_recv_mtx);
-        if (req->req_cb) {
-            req->req_next = mnt->mnt_recv_head;
-            mnt->mnt_recv_head = req;
-        }
         req->req_done = true;
 
-        if (mnt->mnt_recv_waiters > 0)
-            pthread_cond_signal(&mnt->mnt_recv_cv);
-        pthread_mutex_unlock(&mnt->mnt_recv_mtx);
+        if (req->req_cb) {
+            rc = req->req_cb(req);
+            if (rc) {
+                int n;
+
+                n = __atomic_sub_fetch(&mnt->mnt_jobs_cnt, 1, __ATOMIC_SEQ_CST);
+                if (n == 0)
+                    shutdown(mnt->mnt_fd, SHUT_WR);
+            }
+        }
+        else {
+            pthread_mutex_lock(&mnt->mnt_wait_mtx);
+            if (mnt->mnt_wait_waiters > 0)
+                pthread_cond_broadcast(&mnt->mnt_wait_cv);
+            pthread_mutex_unlock(&mnt->mnt_wait_mtx);
+        }
+
+        if (tsc_stop < tsc_stats)
+            continue;
+
+        pthread_spin_lock(&mnt->mnt_stats_spin);
+        mnt->mnt_stats.latency += stats.latency;
+        mnt->mnt_stats.thruput_send += stats.thruput_send;
+        mnt->mnt_stats.thruput_recv += stats.thruput_recv;
+        mnt->mnt_stats.requests += stats.requests;
+        mnt->mnt_stats.updates++;
+        pthread_spin_unlock(&mnt->mnt_stats_spin);
+
+        bzero(&stats, sizeof(stats));
+        tsc_stats = tsc_stop + (1000 * 1000000) / tsc_freq;
     }
 
     pthread_exit(NULL);
 }
 
-/* Send a request asynchronously.
+/* Send a request.
  */
 void
 nct_req_send(nct_req_t *req)
 {
     nct_mnt_t *mnt = req->req_mnt;
     struct rpc_msg *msg;
+    uint32_t xid;
     ssize_t cc;
 
     msg = (void *)req->req_msg->msg_data + 4;
-    req->req_done = 0;
+    req->req_done = false;
 
+    /* Increase the xid by a prime number to reduce cache line
+     * thrashing on mnt_req_tbl[] between send and recv threads.
+     */
     pthread_mutex_lock(&mnt->mnt_send_mtx);
-    req->req_tsc_start = rdtsc();
+    xid = mnt->mnt_send_xid;
+    mnt->mnt_send_xid += 11;
+
     msg->rm_xid = htonl(xid);
     mnt->mnt_req_tbl[xid % NCT_REQ_MAX] = req;
-    req->req_xid = xid++;
+    req->req_xid = xid;
 
     cc = nct_rpc_send(mnt->mnt_fd, req->req_msg->msg_data, req->req_msg->msg_len);
+    pthread_mutex_unlock(&mnt->mnt_send_mtx);
+
     if (cc != req->req_msg->msg_len) {
         // TODO...
+        abort();
     }
-    pthread_mutex_unlock(&mnt->mnt_send_mtx);
-}
-
-/* Wait for any reply to arrive and then process it.
- */
-int
-nct_req_recv(nct_mnt_t *mnt)
-{
-    nct_req_t *req;
-
-    pthread_mutex_lock(&mnt->mnt_recv_mtx);
-    while (!mnt->mnt_recv_head) {
-        ++mnt->mnt_recv_waiters;
-        pthread_cond_wait(&mnt->mnt_recv_cv, &mnt->mnt_recv_mtx);
-        --mnt->mnt_recv_waiters;
-    }
-
-    req = mnt->mnt_recv_head;
-    mnt->mnt_recv_head = req->req_next;
-    pthread_mutex_unlock(&mnt->mnt_recv_mtx);
-
-    return req->req_cb(req);
 }
 
 /* Wait for the reply to the specified request to arrive.
@@ -216,13 +245,13 @@ nct_req_wait(nct_req_t *req)
 {
     nct_mnt_t *mnt = req->req_mnt;
 
-    pthread_mutex_lock(&mnt->mnt_recv_mtx);
+    pthread_mutex_lock(&mnt->mnt_wait_mtx);
     while (!req->req_done) {
-        ++mnt->mnt_recv_waiters;
-        pthread_cond_wait(&mnt->mnt_recv_cv, &mnt->mnt_recv_mtx);
-        --mnt->mnt_recv_waiters;
+        ++mnt->mnt_wait_waiters;
+        pthread_cond_wait(&mnt->mnt_wait_cv, &mnt->mnt_wait_mtx);
+        --mnt->mnt_wait_waiters;
     }
-    pthread_mutex_unlock(&mnt->mnt_recv_mtx);
+    pthread_mutex_unlock(&mnt->mnt_wait_mtx);
 }
 
 /* Allocate a request object from the free pool.
@@ -328,6 +357,4 @@ nct_req_create(nct_mnt_t *mnt)
         mnt->mnt_req_head = req;
         pthread_mutex_unlock(&mnt->mnt_send_mtx);
     }
-
-    mnt->mnt_req_msg = msgbase + (i * msgsz);
 }

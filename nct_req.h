@@ -35,9 +35,9 @@
 #define NCT_MSGSZ_MAX      (1024 * 256 - sizeof(struct nct_msg_s))
 
 struct nct_mnt_s;
-struct nct_req_s;
+struct nct_req;
 
-typedef int nct_req_cb_t(struct nct_req_s *req);
+typedef int nct_req_cb_t(struct nct_req *req);
 
 typedef struct nct_msg_s {
     XDR                 msg_xdr;            // RPC reply xdr
@@ -50,15 +50,12 @@ typedef struct nct_msg_s {
     char                msg_data[];         // TX/RX message buffer (NCT_MSGSZ_MAX)
 } nct_msg_t;
 
-typedef struct nct_req_s {
-    __aligned(64)
-    struct nct_req_s   *req_next;
-    struct nct_req_s  **req_prev;
-
+typedef struct nct_req {
+    nct_msg_t          *req_msg;
+    void               *req_mnt;
     uint32_t            req_xid;
     nct_req_cb_t       *req_cb;
     int                 req_done;
-    nct_msg_t          *req_msg;
 
     void               *req_priv;
     int                 req_argc;
@@ -69,7 +66,10 @@ typedef struct nct_req_s {
 
     uint64_t            req_tsc_finish;     // Finish time
 
-    void               *req_mnt;
+    __aligned(64)
+    struct nct_req     *req_next;
+    struct nct_req    **req_prev;
+
 } nct_req_t;
 
 extern void *nct_req_send_loop(void *arg);

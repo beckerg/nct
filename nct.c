@@ -57,29 +57,6 @@
 
 uint64_t tsc_freq = 1000000;
 
-/* Create a worker thread.
- */
-void
-nct_worker_create(nct_mnt_t *mnt, start_t *start, void *arg)
-{
-    pthread_t td;
-    int rc;
-
-    __sync_fetch_and_add(&mnt->mnt_worker_cnt, 1);
-
-    rc = pthread_create(&td, NULL, start, arg);
-    if (rc) {
-        eprint("pthread_create() failed: %s\n", strerror(errno));
-        abort();
-    }
-}
-
-void
-nct_worker_exit(nct_mnt_t *mnt)
-{
-    __sync_fetch_and_add(&mnt->mnt_worker_cnt, -1);
-}
-
 static void
 nct_gplot(long nsamples, long sampersec, const char *term, const char *using,
            const char *title, const char *xlabel, const char *ylabel, const char *color)
@@ -241,10 +218,10 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
 
         tsc_cur = rdtsc();
 
-        latency_cur = mnt->mnt_stats_latency;
-        reqs_cur = mnt->mnt_stats_requests;
-        throughput_send_cur = mnt->mnt_stats_throughput_send;
-        throughput_recv_cur = mnt->mnt_stats_throughput_recv;
+        latency_cur = mnt->mnt_stats.latency;
+        reqs_cur = mnt->mnt_stats.requests;
+        throughput_send_cur = mnt->mnt_stats.thruput_send;
+        throughput_recv_cur = mnt->mnt_stats.thruput_recv;
 
         if (cur) {
             cur->xsr_time = tsc_cur;
@@ -259,7 +236,7 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
         }
 
         if (!mark) {
-            if (mnt->mnt_worker_cnt < 1)
+            if (__atomic_load_n(&mnt->mnt_jobs_cnt, __ATOMIC_SEQ_CST) < 1)
                 break;
             continue;
         }
@@ -278,7 +255,7 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
             throughput_recv_avg = throughput_recv_cur - throughput_recv_last;
             throughput_recv_avg /= 1024 * 1024;
         } else {
-            if (mnt->mnt_worker_cnt < 1) {
+            if (__atomic_load_n(&mnt->mnt_jobs_cnt, __ATOMIC_SEQ_CST) < 1) {
                 break;
             }
 
@@ -358,10 +335,12 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
             latency = cur->xsr_latency - prev->xsr_latency;
             latency_tot += latency;
 
-            if (latency / requests > latency_max)
-                latency_max = latency / requests;
-            if (latency / requests < latency_min)
-                latency_min = latency / requests;
+            if (requests > 0) {
+                if (latency / requests > latency_max)
+                    latency_max = latency / requests;
+                if (latency / requests < latency_min)
+                    latency_min = latency / requests;
+            }
 
             /* Compute n-point running average (where n is samples_per_second).
              */
@@ -411,29 +390,41 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
          */
         samples_tot = cur - statsv;
 
-        printf("\n%12s %12s %12s  %s\n", "MIN", "AVG", "MAX", "DESC");
+        printf("\n%12s %12s %12s %12s  %s\n", "MIN", "AVG", "MAX", "TOTAL", "DESC");
 
         uint64_t requests_avg = (requests_tot * samples_per_sec) / samples_tot;
 
-        printf("%12lu %12lu %12lu  REQ/s (requests per second)\n",
-               requests_min,
-               requests_avg,
-               requests_max);
+        printf("%12lu %12lu %12lu %12lu  requests per second\n",
+               requests_min, requests_avg, requests_max,
+               mnt->mnt_stats.requests);
 
-        printf("%12lu %12lu %12lu  TX/s (bytes transmitted per second)\n",
+        printf("%12lu %12lu %12lu %12lu  bytes transmitted per second\n",
                throughput_send_min,
                (throughput_send_tot * samples_per_sec) / samples_tot,
-               throughput_send_max);
+               throughput_send_max,
+               mnt->mnt_stats.thruput_send);
 
-        printf("%12lu %12lu %12lu  RX/s (bytes received per second)\n",
+        printf("%12lu %12lu %12lu %12lu  bytes received per second\n",
                throughput_recv_min,
                (throughput_recv_tot * samples_per_sec) / samples_tot,
-               throughput_recv_max);
+               throughput_recv_max,
+               mnt->mnt_stats.thruput_recv);
 
-        printf("%12.1lf %12.1lf %12.1lf  Latency (microseconds per request)\n",
+        printf("%12.1lf %12.1lf %12.1lf %12lu  microseconds latency per request\n",
                (latency_min * 1000000.0) / tsc_freq,
                ((latency_tot * 1000000.0 * samples_per_sec) / (tsc_freq * samples_tot)) / requests_avg,
-               (latency_max * 1000000.0) / tsc_freq);
+               (latency_max * 1000000.0) / tsc_freq,
+               mnt->mnt_stats.latency);
+
+        printf("%12s %12s %12s %12lu  updates\n",
+               "-", "-", "-", mnt->mnt_stats.updates);
+
+        printf("%12s %12s %12s %12u  threads\n",
+               "-", "-", "-", mnt->mnt_tds_max);
+
+        printf("%12s %12s %12s %12u  jobs\n",
+               "-", "-", "-", mnt->mnt_jobs_max);
+
 
         fclose(fpraw);
 

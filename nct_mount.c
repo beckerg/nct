@@ -93,7 +93,7 @@ nct_connect(nct_mnt_t *mnt)
  * Where path is:  [user@]host[:/export...]
  */
 nct_mnt_t *
-nct_mount(const char *path, in_port_t port)
+nct_mount(const char *path, in_port_t port, u_int tds_max, u_int jobs_max)
 {
     struct hostent *hent;
     nct_mnt_t *mnt;
@@ -103,6 +103,7 @@ nct_mount(const char *path, in_port_t port)
     int pathlen;
     char *pc;
     int rc;
+    int i;
 
     pathlen = strlen(path);
 
@@ -189,47 +190,31 @@ nct_mount(const char *path, in_port_t port)
     }
 
     rc = pthread_mutex_init(&mnt->mnt_send_mtx, NULL);
-    if (rc) {
-        eprint("pthread_mutex_init() failed: %s\n", strerror(errno));
-        abort();
-    }
-
     rc = pthread_cond_init(&mnt->mnt_send_cv, NULL);
-    if (rc) {
-        eprint("pthread_cond_init() failed: %s\n", strerror(errno));
-        abort();
-    }
 
     rc = pthread_mutex_init(&mnt->mnt_recv_mtx, NULL);
-    if (rc) {
-        eprint("pthread_mutex_init() failed: %s\n", strerror(errno));
-        abort();
-    }
+    rc = pthread_spin_init(&mnt->mnt_stats_spin, PTHREAD_PROCESS_PRIVATE);
 
-    rc = pthread_cond_init(&mnt->mnt_recv_cv, NULL);
-    if (rc) {
-        eprint("pthread_cond_init() failed: %s\n", strerror(errno));
-        abort();
-    }
+    rc = pthread_mutex_init(&mnt->mnt_wait_mtx, NULL);
+    rc = pthread_cond_init(&mnt->mnt_wait_cv, NULL);
 
     rc = pthread_mutex_init(&mnt->mnt_req_mtx, NULL);
-    if (rc) {
-        eprint("pthread_mutex_init() failed: %s\n", strerror(errno));
-        abort();
-    }
-
     rc = pthread_cond_init(&mnt->mnt_req_cv, NULL);
-    if (rc) {
-        eprint("pthread_cond_init() failed: %s\n", strerror(errno));
-        abort();
-    }
+
+    if (tds_max > NELEM(mnt->mnt_recv_tdv))
+        tds_max = NELEM(mnt->mnt_recv_tdv);
+
+    mnt->mnt_jobs_max = jobs_max;
+    mnt->mnt_tds_max = tds_max;
 
     nct_req_create(mnt);
 
-    rc = pthread_create(&mnt->mnt_recv_td, NULL, nct_req_recv_loop, mnt);
-    if (rc) {
-        eprint("pthread_create() failed: %s\n", strerror(errno));
-        abort();
+    for (i = 0; i < tds_max; ++i) {
+        rc = pthread_create(&mnt->mnt_recv_tdv[i], NULL, nct_req_recv_loop, mnt);
+        if (rc) {
+            eprint("pthread_create() failed: %s\n", strerror(errno));
+            abort();
+        }
     }
 
     nct_nfs_mount(mnt);
@@ -238,6 +223,7 @@ nct_mount(const char *path, in_port_t port)
     /* Get the attributes
      */
     req = nct_req_alloc(mnt);
+    req->req_tsc_start = rdtsc();
     nct_nfs_getattr3_encode(req);
     nct_req_send(req);
     nct_req_wait(req);
@@ -288,26 +274,29 @@ void
 nct_umount(nct_mnt_t *mnt)
 {
     void *val;
-    int rc;
-
-    while (mnt->mnt_worker_cnt > 0) {
-        sleep(1);
-    }
+    int i, rc;
 
     shutdown(mnt->mnt_fd, SHUT_RDWR);
 
     pthread_cond_broadcast(&mnt->mnt_send_cv);
-    pthread_cond_broadcast(&mnt->mnt_recv_cv);
+    pthread_cond_broadcast(&mnt->mnt_wait_cv);
 
-    rc = pthread_join(mnt->mnt_recv_td, &val);
-    if (rc) {
-        abort();
+    for (i = 0; i < NELEM(mnt->mnt_recv_tdv); ++i) {
+        if (mnt->mnt_recv_tdv[i])
+            rc = pthread_join(mnt->mnt_recv_tdv[i], &val);
     }
 
     auth_destroy(mnt->mnt_auth);
     close(mnt->mnt_fd);
 
     nct_vn_free(mnt->mnt_vn);
+
+    pthread_mutex_destroy(&mnt->mnt_req_mtx);
+    pthread_mutex_destroy(&mnt->mnt_wait_mtx);
+    pthread_spin_destroy(&mnt->mnt_stats_spin);
+    pthread_mutex_destroy(&mnt->mnt_recv_mtx);
+    pthread_mutex_destroy(&mnt->mnt_send_mtx);
+
     free(mnt);
 }
 
@@ -321,5 +310,8 @@ nct_mnt_print(nct_mnt_t *mnt)
     dprint(1, "port     %u\n", mnt->mnt_port);
     dprint(1, "fd       %d\n", mnt->mnt_fd);
     dprint(1, "auth     %p\n", mnt->mnt_auth);
-    dprint(1, "recv     %p\n", (void *)mnt->mnt_recv_td);
+    dprint(1, "jobs_max %d\n", mnt->mnt_jobs_max);
+    dprint(1, "jobs_cnt %d\n", mnt->mnt_jobs_cnt);
+    dprint(1, "xid      %u\n", mnt->mnt_send_xid);
+    dprint(1, "mark     %u\n", mnt->mnt_recv_mark);
 }

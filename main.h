@@ -4,7 +4,8 @@
 #ifndef NCT_MAIN_H
 #define NCT_MAIN_H
 
-typedef void *start_t(void *);
+struct nct_req;
+typedef int start_t(struct nct_req *req);
 
 /* The command line parser set the following global variables:
  */

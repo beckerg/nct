@@ -68,7 +68,8 @@ int verbosity;
 FILE *dprint_fp;
 FILE *eprint_fp;
 
-unsigned int jobs = 1;
+unsigned int jobs_max = 1;
+unsigned int tds_max = 1;
 in_port_t port = 2049;
 char *term = "png";         // Term type for gnuplot
 char *outdir = NULL;
@@ -95,11 +96,13 @@ static clp_option_t optionv[] = {
     CLP_OPTION_HELP,
 
     CLP_OPTION(time_t, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
-    CLP_OPTION(u_int, 'j', jobs, NULL, NULL, "max number of concurrent jobs (worker threads)"),
+    CLP_OPTION(u_int, 'j', jobs_max, NULL, NULL,
+               "max number of concurrent NFS request jobs"),
     CLP_OPTION(u_int, 'm', mark, NULL, NULL, "print status every mark seconds"),
     CLP_OPTION(string, 'o', outdir, NULL, NULL, "directory in which to store results"),
     CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "remote NFSd port"),
     CLP_OPTION(string, 'T', term, NULL, NULL, "terminal type for gnuplot"),
+    CLP_OPTION(u_int, 't', tds_max, NULL, NULL, "max number of worker threads"),
 
     CLP_OPTION_END
 };
@@ -236,7 +239,7 @@ main(int argc, char **argv)
         abort();
     }
 
-    mnt = nct_mount(rhostpath, port);
+    mnt = nct_mount(rhostpath, port, tds_max, jobs_max);
     if (!mnt) {
         eprint("mount %s failed\n", rhostpath);
         abort();
@@ -255,14 +258,15 @@ main(int argc, char **argv)
             abort();
     }
 
-    for (i = 0; i < jobs; ++i) {
-        req = nct_req_alloc(mnt);
+    for (i = 0; i < jobs_max; ++i) {
+        __atomic_add_fetch(&mnt->mnt_jobs_cnt, 1, __ATOMIC_SEQ_CST);
 
+        req = nct_req_alloc(mnt);
         req->req_priv = priv;
         req->req_argc = argc;
         req->req_argv = argv;
 
-        nct_worker_create(mnt, start, req);
+        start(req);
     }
 
     nct_stats_loop(mnt, mark, sample_period, duration,
