@@ -164,7 +164,7 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
     uint64_t throughput_send_cur, throughput_send_last;
     uint64_t throughput_recv_cur, throughput_recv_last;
     double throughput_send_avg, throughput_recv_avg;
-    uint64_t latency_cur, latency_prev, latency_avg;
+    uint64_t latency_cur, latency_prev;
     uint64_t tsc_cur, tsc_last, tsc_interval;
     nct_statsrec_t *cur, *prev, *end;
     uint64_t reqs_cur, reqs_last;
@@ -200,7 +200,8 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
         print_period -= (sample_period / 2);
 
     while (1) {
-        char latency_buf[32];
+        char lat_min_buf[32], lat_max_buf[32], lat_avg_buf[32];
+        uint64_t latency_min, latency_max;
         long tgt, delta;
 
         ++samples_tot;
@@ -218,10 +219,18 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
 
         tsc_cur = rdtsc();
 
-        latency_cur = mnt->mnt_stats.latency;
+        pthread_spin_lock(&mnt->mnt_stats_spin);
+        latency_min = mnt->mnt_stats.latency_min;
+        latency_max = mnt->mnt_stats.latency_max;
+
+        mnt->mnt_stats.latency_min = UINT64_MAX;
+        mnt->mnt_stats.latency_max = 0;
+
+        latency_cur = mnt->mnt_stats.latency_cum;
         reqs_cur = mnt->mnt_stats.requests;
         throughput_send_cur = mnt->mnt_stats.thruput_send;
         throughput_recv_cur = mnt->mnt_stats.thruput_recv;
+        pthread_spin_unlock(&mnt->mnt_stats_spin);
 
         if (cur) {
             cur->xsr_time = tsc_cur;
@@ -247,9 +256,17 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
         tsc_interval = ((tsc_cur - tsc_last) * 1000000ul) / tsc_freq;
 
         if (reqs_cur > reqs_last) {
-            latency_avg = (latency_cur - latency_prev) / (reqs_cur - reqs_last);
-            snprintf(latency_buf, sizeof(latency_buf), "%10.2f",
-                     (latency_avg * (float)1000000) / (tsc_cur - tsc_last));
+            uint64_t lat;
+
+            snprintf(lat_min_buf, sizeof(lat_min_buf), "%6.1lf",
+                     (latency_min * 1000000.0) / (tsc_cur - tsc_last));
+            snprintf(lat_max_buf, sizeof(lat_max_buf), "%6.1lf",
+                     (latency_max * 1000000.0) / (tsc_cur - tsc_last));
+
+            lat = (latency_cur - latency_prev) / (reqs_cur - reqs_last);
+            snprintf(lat_avg_buf, sizeof(lat_avg_buf), "%6.1lf",
+                     (lat * 1000000.0) / (tsc_cur - tsc_last));
+
             throughput_send_avg = throughput_send_cur - throughput_send_last;
             throughput_send_avg /= 1024 * 1024;
             throughput_recv_avg = throughput_recv_cur - throughput_recv_last;
@@ -259,19 +276,21 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
                 break;
             }
 
-            snprintf(latency_buf, sizeof(latency_buf), "%10s", "stalled");
+            snprintf(lat_avg_buf, sizeof(lat_avg_buf), "%10s", "stalled");
             throughput_send_avg = 0;
             throughput_recv_avg = 0;
         }
 
         if ((loops++ % 22) == 0) {
-            printf("\n%8s %9s %8s %7s %7s %10s\n",
-                   "SAMPLES", "DURATION", "OPS", "TXMB", "RXMB", "LATENCY");
+            printf("\n%8s %9s %8s %7s %7s %7s %7s %7s\n",
+                   "SAMPLES", "DURATION", "OPS", "TXMB", "RXMB",
+                   "LATMIN", "LATAVG", "LATMAX");
         }
 
-        printf("%8ld %9lu %8lu %7.2lf %7.2lf %s\n",
+        printf("%8ld %9lu %8lu %7.2lf %7.2lf %7s %7s %7s\n",
                samples_tot, tsc_interval, reqs_cur - reqs_last,
-               throughput_send_avg, throughput_recv_avg, latency_buf);
+               throughput_send_avg, throughput_recv_avg,
+               lat_min_buf, lat_avg_buf, lat_max_buf);
 
         throughput_send_last = throughput_send_cur;
         throughput_recv_last = throughput_recv_cur;
@@ -390,39 +409,42 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
          */
         samples_tot = cur - statsv;
 
-        printf("\n%12s %12s %12s %12s  %s\n", "MIN", "AVG", "MAX", "TOTAL", "DESC");
+        printf("\n%12s %12s %12s %15s  %s\n", "MIN", "AVG", "MAX", "TOTAL", "DESC");
 
         uint64_t requests_avg = (requests_tot * samples_per_sec) / samples_tot;
 
-        printf("%12lu %12lu %12lu %12lu  requests per second\n",
-               requests_min, requests_avg, requests_max,
-               mnt->mnt_stats.requests);
-
-        printf("%12lu %12lu %12lu %12lu  bytes transmitted per second\n",
+        printf("%12lu %12lu %12lu %15lu  bytes transmitted per second\n",
                throughput_send_min,
                (throughput_send_tot * samples_per_sec) / samples_tot,
                throughput_send_max,
                mnt->mnt_stats.thruput_send);
 
-        printf("%12lu %12lu %12lu %12lu  bytes received per second\n",
+        printf("%12lu %12lu %12lu %15lu  bytes received per second\n",
                throughput_recv_min,
                (throughput_recv_tot * samples_per_sec) / samples_tot,
                throughput_recv_max,
                mnt->mnt_stats.thruput_recv);
 
-        printf("%12.1lf %12.1lf %12.1lf %12lu  microseconds latency per request\n",
+        printf("%12.1lf %12.1lf %12.1lf %15lu  latency per request (usecs)\n",
                (latency_min * 1000000.0) / tsc_freq,
                ((latency_tot * 1000000.0 * samples_per_sec) / (tsc_freq * samples_tot)) / requests_avg,
                (latency_max * 1000000.0) / tsc_freq,
-               mnt->mnt_stats.latency);
+               mnt->mnt_stats.latency_cum);
 
-        printf("%12s %12s %12s %12lu  updates\n",
+        printf("%12lu %12lu %12lu %15lu  requests per second\n",
+               requests_min, requests_avg, requests_max,
+               mnt->mnt_stats.requests);
+
+        printf("%12s %12s %12s %15lu  updates\n",
                "-", "-", "-", mnt->mnt_stats.updates);
 
-        printf("%12s %12s %12s %12u  threads\n",
+        printf("%12s %12s %12s %15lu  marks\n",
+               "-", "-", "-", mnt->mnt_stats.marks);
+
+        printf("%12s %12s %12s %15u  threads\n",
                "-", "-", "-", mnt->mnt_tds_max);
 
-        printf("%12s %12s %12s %12u  jobs\n",
+        printf("%12s %12s %12s %15u  jobs\n",
                "-", "-", "-", mnt->mnt_jobs_max);
 
 

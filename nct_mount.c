@@ -267,6 +267,9 @@ nct_mount(const char *path, in_port_t port, u_int tds_max, u_int jobs_max)
 
     nct_req_free(req);
 
+    memset(&mnt->mnt_stats, 0, sizeof(mnt->mnt_stats));
+    mnt->mnt_stats.latency_min = UINT64_MAX;
+
     return mnt;
 }
 

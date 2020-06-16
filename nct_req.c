@@ -60,7 +60,7 @@ void *
 nct_req_recv_loop(void *arg)
 {
     struct nct_stats stats;
-    uint64_t tsc_stats, tsc_stop;
+    uint64_t tsc_stats, tsc_stop, tsc_diff;
     nct_mnt_t *mnt = arg;
     nct_req_t *req0;
     uint32_t *markp;
@@ -77,7 +77,7 @@ nct_req_recv_loop(void *arg)
     /* Don't wait for a subsequent RPC record mark if there isn't
      * sufficient parallelism.
      */
-    markp = (mnt->mnt_jobs_max > 2) ? &mnt->mnt_recv_mark : NULL;
+    markp = (mnt->mnt_jobs_max > 3) ? &mnt->mnt_recv_mark : NULL;
 
     /* Update the mount stats record at most once per millisecond
      * to reduce contention.
@@ -121,13 +121,16 @@ nct_req_recv_loop(void *arg)
                 req = mnt->mnt_req_tbl[i];
                 if (req->req_tsc_start > req->req_tsc_stop) {
                     req->req_tsc_stop = rdtsc();
-                    mnt->mnt_stats.latency += req->req_tsc_stop - req->req_tsc_start;
+                    mnt->mnt_stats.latency_cum += req->req_tsc_stop - req->req_tsc_start;
                     nct_req_send(req);
                 }
             }
 
             continue;
         }
+
+        if (mnt->mnt_recv_mark)
+            ++stats.marks;
         pthread_mutex_unlock(&mnt->mnt_recv_mtx);
 
         stat = nct_rpc_decode(&msg->msg_xdr, msg->msg_data, cc, &msg->msg_rpc, &msg->msg_err);
@@ -154,7 +157,8 @@ nct_req_recv_loop(void *arg)
 
         /* Update cumulative stats.
          */
-        stats.latency += req->req_tsc_stop - req->req_tsc_start;
+        tsc_diff = tsc_stop - req->req_tsc_start;
+        stats.latency_cum += req->req_tsc_stop - req->req_tsc_start;
         stats.thruput_send += req->req_msg->msg_len;
         stats.thruput_recv += cc;
         stats.requests++;
@@ -191,15 +195,22 @@ nct_req_recv_loop(void *arg)
             continue;
 
         pthread_spin_lock(&mnt->mnt_stats_spin);
-        mnt->mnt_stats.latency += stats.latency;
+        if (tsc_diff < mnt->mnt_stats.latency_min)
+            mnt->mnt_stats.latency_min = tsc_diff;
+        if (tsc_diff > mnt->mnt_stats.latency_max)
+            mnt->mnt_stats.latency_max = tsc_diff;
+        mnt->mnt_stats.latency_cum += stats.latency_cum;
         mnt->mnt_stats.thruput_send += stats.thruput_send;
         mnt->mnt_stats.thruput_recv += stats.thruput_recv;
         mnt->mnt_stats.requests += stats.requests;
+        mnt->mnt_stats.marks += stats.marks;
         mnt->mnt_stats.updates++;
         pthread_spin_unlock(&mnt->mnt_stats_spin);
 
+        /* Extend the next stats update by 1000us.
+         */
+        tsc_stats += (1000 * 1000000) / tsc_freq;
         bzero(&stats, sizeof(stats));
-        tsc_stats = tsc_stop + (1000 * 1000000) / tsc_freq;
     }
 
     pthread_exit(NULL);

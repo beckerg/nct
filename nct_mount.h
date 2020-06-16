@@ -39,11 +39,14 @@
 #endif
 
 struct nct_stats {
-    uint64_t            latency;      // Total latency of completed requests
+    uint64_t            latency_min;  // Min latency of completed requests
+    uint64_t            latency_max;  // Max latency of completed requests
+    uint64_t            latency_cum;  // Cumulative latency of completed requests
     uint64_t            requests;     // Total number of requests completed
     uint64_t            thruput_send;
     uint64_t            thruput_recv;
     uint64_t            updates;
+    uint64_t            marks;
 };
 
 typedef struct nct_mnt_s {

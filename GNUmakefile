@@ -16,18 +16,9 @@ HDR	:= ${patsubst %.c,%.h,${SRC}}
 HDR	+= nct_nfstypes.h
 
 LDLIBS	:= -lpthread
-
 VPATH	:=
 
-# Uncomment USE_TSC if you have a P-state invariant TSC that is synchronized
-# across all cores.  By default we use gettimeofday() for timing purposes.
-#
-#CDEFS	+= -DUSE_TSC
-
-
-# You probably don't need to change anything below this line.
-
-NCT_VERSION	:= $(shell git describe --abbrev=4 --dirty --always --tags)
+NCT_VERSION	:= $(shell git describe --abbrev=10 --dirty --always --tags)
 PLATFORM	:= $(shell uname -s | tr 'a-z' 'A-Z')
 
 INCLUDE 	:= -I. -I../lib -I../../src/include
@@ -38,6 +29,11 @@ ifneq ($(wildcard /usr/include/tirpc/rpc/rpc.h),)
 	CDEFS += -DHAVE_TIRPC
 	LDLIBS += -ltirpc
 endif
+
+# Uncomment USE_TSC if you have a P-state invariant TSC that is synchronized
+# across all cores.  By default we use gettimeofday() for timing purposes.
+#
+CDEFS	+= -DUSE_TSC
 
 CFLAGS		+= -Wall -g -O2 ${INCLUDE}
 DEBUG		:= -O0 -DDEBUG -UNDEBUG -fno-omit-frame-pointer
@@ -58,7 +54,7 @@ CSCOPE_EXCLUDE	?= '^/usr/src/sys/(arm|i386|ia64|mips|powerpc|sparc64|sun4v|pc98|
 #
 .DELETE_ON_ERROR:
 
-.PHONY:	all asan clean clobber cscope debug etags tags
+.PHONY:	all asan clean clobber cscope debug etags native tags
 
 
 all: ${PROG}
@@ -91,11 +87,13 @@ cscope.files: GNUmakefile ${HDR} ${SRC}
 debug: CFLAGS += ${DEBUG}
 debug: ${PROG}
 
+native: CFLAGS += -march=native
+native: ${PROG}
+
 tags etags: TAGS
 
 TAGS: cscope.files
 	cat cscope.files | xargs etags -a --members --output=$@
-
 
 # Use gmake's link rule to produce the target.
 #
