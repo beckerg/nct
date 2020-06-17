@@ -55,7 +55,8 @@
 #include "nct_nfs.h"
 #include "nct.h"
 
-uint64_t tsc_freq = 1000000;
+bool have_tsc __read_mostly;
+uint64_t tsc_freq __read_mostly;
 
 static void
 nct_gplot(long nsamples, long sampersec, const char *term, const char *using,
@@ -208,11 +209,10 @@ nct_stats_loop(nct_mnt_t *mnt, u_int mark,
 
         tgt = tsc_start + samples_tot * sample_period;
 
-#ifdef USE_TSC
-        delta = ((tgt - tsc_cur) * 1000000ul) / tsc_freq;
-#else
-        delta = tgt - tsc_cur;
-#endif
+        if (have_tsc > 0)
+            delta = ((tgt - tsc_cur) * 1000000ul) / tsc_freq;
+        else
+            delta = tgt - tsc_cur;
 
         if (delta > 999)
             usleep(delta - 999);

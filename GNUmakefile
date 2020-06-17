@@ -30,11 +30,6 @@ ifneq ($(wildcard /usr/include/tirpc/rpc/rpc.h),)
 	LDLIBS += -ltirpc
 endif
 
-# Uncomment USE_TSC if you have a P-state invariant TSC that is synchronized
-# across all cores.  By default we use gettimeofday() for timing purposes.
-#
-CDEFS	+= -DUSE_TSC
-
 CFLAGS		+= -Wall -g -O2 ${INCLUDE}
 DEBUG		:= -O0 -DDEBUG -UNDEBUG -fno-omit-frame-pointer
 CPPFLAGS	:= ${CDEFS}

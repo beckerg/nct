@@ -29,6 +29,14 @@
 
 #include "nct_mount.h"
 
+#ifndef __read_mostly
+#define __read_mostly       __attribute__((__section__(".read_mostly")))
+#endif
+
+#ifndef likely
+#define likely(_expr)       __builtin_expect(!!(_expr), 1)
+#endif
+
 /* Sample interval record.  All times are in cycles/s (from rdtsc()).
  */
 typedef struct {
@@ -59,9 +67,24 @@ typedef struct {
  * to write the time-stamp counter immediately prior to the WRMSR. This could mean
  * the value written to the TSC could vary by thousands to millions of clocks.
  */
-#ifdef USE_TSC
-extern uint64_t tsc_freq;
 
+extern uint64_t tsc_freq;
+extern bool have_tsc;
+
+static inline uint64_t
+rdtsc(void)
+{
+    struct timeval tv;
+
+    if (likely(have_tsc))
+        return __rdtsc();
+
+    gettimeofday(&tv, NULL);
+
+    return (tv.tv_sec * 1000000 + tv.tv_usec);
+}
+
+#if 0
 static inline uint64_t
 rdtsc(void)
 {
@@ -71,21 +94,7 @@ rdtsc(void)
 
     return (low | ((u_int64_t)high << 32));
 }
-
-#else
-
-extern uint64_t tsc_freq;
-
-static inline uint64_t
-rdtsc(void)
-{
-    struct timeval tv;
-
-    gettimeofday(&tv, NULL);
-
-    return (tv.tv_sec * 1000000 + tv.tv_usec);
-}
-#endif // NCT_TSC
+#endif
 
 
 extern void nct_req_send(nct_req_t *req);

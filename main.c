@@ -96,13 +96,12 @@ static clp_option_t optionv[] = {
     CLP_OPTION_HELP,
 
     CLP_OPTION(time_t, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
-    CLP_OPTION(u_int, 'j', jobs_max, NULL, NULL,
-               "max number of concurrent NFS request jobs"),
+    CLP_OPTION(u_int, 'j', jobs_max, NULL, NULL, "max number of NFS request threads"),
     CLP_OPTION(u_int, 'm', mark, NULL, NULL, "print status every mark seconds"),
     CLP_OPTION(string, 'o', outdir, NULL, NULL, "directory in which to store results"),
     CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "remote NFSd port"),
     CLP_OPTION(string, 'T', term, NULL, NULL, "terminal type for gnuplot"),
-    CLP_OPTION(u_int, 't', tds_max, NULL, NULL, "max number of worker threads"),
+    CLP_OPTION(u_int, 't', tds_max, NULL, NULL, "max number of NFS reply threads"),
 
     CLP_OPTION_END
 };
@@ -163,34 +162,31 @@ main(int argc, char **argv)
     argc -= optind;
     argv += optind;
 
-#ifdef USE_TSC
 #ifdef __FreeBSD__
-    size_t sz = sizeof(tsc_freq);
-    int ival;
+    uint64_t val;
+    size_t valsz;
 
-    sz = sizeof(ival);
-    rc = sysctlbyname("kern.timecounter.smp_tsc", (void *)&ival, &sz, NULL, 0);
+    valsz = sizeof(val);
+    rc = sysctlbyname("kern.timecounter.invariant_tsc", (void *)&val, &valsz, NULL, 0);
     if (rc) {
-        eprint("sysctlbyname(kern.timecounter.smp_tsc): %s\n", strerror(errno));
+        eprint("sysctlbyname(kern.timecounter.invariant_tsc): %s\n", strerror(errno));
         exit(EX_OSERR);
     }
 
-    if (!ival) {
-        dprint(0, "unable to determine if the TSC is SMP safe, "
-               "output will likely be incorrect\n");
+    if (val) {
+        valsz = sizeof(tsc_freq);
+        rc = sysctlbyname("machdep.tsc_freq", (void *)&val, &valsz, NULL, 0);
+        if (rc) {
+            eprint("sysctlbyname(machdep.tsc_freq): %s\n", strerror(errno));
+        } else {
+            have_tsc = true;
+            tsc_freq = val;
+            dprint(1, "machedep.tsc_freq: %lu\n", tsc_freq);
+        }
     }
-
-    sz = sizeof(tsc_freq);
-    rc = sysctlbyname("machdep.tsc_freq", (void *)&tsc_freq, &sz, NULL, 0);
-    if (rc) {
-        eprint("sysctlbyname(machdep.tsc_freq): %s\n", strerror(errno));
-        exit(EX_OSERR);
-    }
-
-    dprint(1, "machedep.tsc_freq: %lu\n", tsc_freq);
 #else
-#error "Don't know how to determine the TSC frequency on this platform"
-#endif
+    have_tsc = false;
+    tsc_freq = 1000000;
 #endif
 
     if (outdir) {
