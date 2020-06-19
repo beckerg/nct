@@ -70,8 +70,8 @@ static struct cmd cmdv[] = {
     { }
 };
 
-static const size_t errbufsz = 128;
-static char errbuf[errbufsz];
+static char errbuf[128];
+static const size_t errbufsz = sizeof(errbuf);
 
 static int
 nyi(struct cmd *cmd)

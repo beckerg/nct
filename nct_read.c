@@ -42,10 +42,10 @@
 
 #include "clp.h"
 #include "main.h"
+#include "nct.h"
 #include "nct_nfs.h"
 #include "nct_mount.h"
 #include "nct_read.h"
-#include "nct.h"
 
 typedef struct {
     off_t   pr_offset;

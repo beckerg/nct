@@ -52,9 +52,9 @@
 #include <rpc/rpc.h>
 
 #include "main.h"
+#include "nct.h"
 #include "nct_nfs.h"
 #include "nct_xdr.h"
-#include "nct.h"
 
 int
 nct_connect(nct_mnt_t *mnt)
@@ -285,8 +285,12 @@ nct_umount(nct_mnt_t *mnt)
     pthread_cond_broadcast(&mnt->mnt_wait_cv);
 
     for (i = 0; i < NELEM(mnt->mnt_recv_tdv); ++i) {
-        if (mnt->mnt_recv_tdv[i])
+        if (mnt->mnt_recv_tdv[i]) {
             rc = pthread_join(mnt->mnt_recv_tdv[i], &val);
+            if (rc) {
+                eprint("pthread_join: %d\n", rc);
+            }
+        }
     }
 
     auth_destroy(mnt->mnt_auth);

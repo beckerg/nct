@@ -30,14 +30,6 @@
 #include "nct_vnode.h"
 #include "nct_req.h"
 
-#ifndef __aligned
-#define __aligned(_n)   __attribute__((__aligned__(_n)))
-#endif
-
-#ifndef NELEM
-#define NELEM(_a)       (sizeof((_a)) / sizeof((_a)[0]))
-#endif
-
 struct nct_stats {
     uint64_t            latency_min;  // Min latency of completed requests
     uint64_t            latency_max;  // Max latency of completed requests

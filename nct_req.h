@@ -25,6 +25,8 @@
 #ifndef NCT_REQ_H
 #define NCT_REQ_H
 
+#include "nct.h"
+
 /* Max number of NFS requests
  */
 #define NCT_REQ_SHIFT      (10)

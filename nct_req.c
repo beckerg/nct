@@ -333,12 +333,13 @@ nct_req_create(nct_mnt_t *mnt)
   again:
     msgbase = mmap(NULL, sz, prot, flags | super, -1, 0);
     if (msgbase == MAP_FAILED) {
-        dprint(1, "mmap failed: super=%x, %d %s\n", super, errno, strerror(errno));
         if (super) {
             super = 0;
             goto again;
         }
 
+        dprint(0, "mmap(%zu, %x, %x) failed: %s\n",
+               sz, prot, flags, strerror(errno));
         abort();
     }
 

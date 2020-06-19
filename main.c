@@ -54,12 +54,12 @@
 
 #include "clp.h"
 #include "main.h"
+#include "nct.h"
 #include "nct_shell.h"
 #include "nct_nfs.h"
 #include "nct_getattr.h"
 #include "nct_read.h"
 #include "nct_null.h"
-#include "nct.h"
 
 char version[] = NCT_VERSION;
 char *progname;
@@ -77,6 +77,9 @@ time_t duration = 60;
 char *command = NULL;
 char *args = NULL;
 u_int mark = 0;
+
+bool have_tsc __read_mostly;
+uint64_t tsc_freq __read_mostly;
 
 static clp_posparam_t posparamv[] = {
     { .name = "command",
@@ -130,6 +133,7 @@ main(int argc, char **argv)
 
     dprint_fp = stderr;
     eprint_fp = stderr;
+    have_tsc = false;
 
     initstate((u_long)time(NULL), state, sizeof(state));
 
@@ -162,7 +166,8 @@ main(int argc, char **argv)
     argc -= optind;
     argv += optind;
 
-#ifdef __FreeBSD__
+#if __amd64__
+#if __FreeBSD__
     uint64_t val;
     size_t valsz;
 
@@ -184,10 +189,25 @@ main(int argc, char **argv)
             dprint(1, "machedep.tsc_freq: %lu\n", tsc_freq);
         }
     }
-#else
-    have_tsc = false;
-    tsc_freq = 1000000;
+#elif __linux__
+    const char cmd[] = "lscpu | sed -En 's/^Model name.*([0-9]\\.[0-9][0-9])GHz$/\\1/p'";
+    char buf[32];
+    FILE *fp;
+
+    fp = popen(cmd, "r");
+    if (fp) {
+        if (fgets(buf, sizeof(buf), fp)) {
+            tsc_freq = strtod(buf, NULL) * 1000000000;
+            have_tsc = true;
+        }
+        pclose(fp);
+    }
 #endif
+#endif
+
+    if (!have_tsc)
+        tsc_freq = 1000000;
+    dprint(1, "have_tsc %d, tsc_freq %lu\n", have_tsc, tsc_freq);
 
     if (outdir) {
         rc = mkdir(outdir, 0755);

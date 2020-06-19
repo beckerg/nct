@@ -52,11 +52,8 @@
 #include <rpc/rpc.h>
 
 #include "main.h"
-#include "nct_nfs.h"
 #include "nct.h"
-
-bool have_tsc __read_mostly;
-uint64_t tsc_freq __read_mostly;
+#include "nct_nfs.h"
 
 static void
 nct_gplot(long nsamples, long sampersec, const char *term, const char *using,

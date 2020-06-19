@@ -39,10 +39,10 @@
 
 #include "clp.h"
 #include "main.h"
+#include "nct.h"
 #include "nct_nfs.h"
 #include "nct_xdr.h"
 #include "nct_null.h"
-#include "nct.h"
 
 typedef struct {
     int     pr_duration;

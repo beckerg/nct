@@ -50,10 +50,10 @@
 #include <rpc/rpc.h>
 
 #include "main.h"
+#include "nct.h"
 #include "nct_nfs.h"
 #include "nct_rpc.h"
 #include "nct_xdr.h"
-#include "nct.h"
 
 static const char *
 strerror_mountstat3(enum mountstat3 stat)
@@ -111,7 +111,7 @@ nct_nfs_mount(struct nct_mnt_s *mnt)
     }
 
     if (geteuid() == 0) {
-#ifdef __FreeBSD__
+#if __FreeBSD__
         int opt = IP_PORTRANGE_LOW;
 
         rc = setsockopt(fd, IPPROTO_IP, IP_PORTRANGE, &opt, sizeof(opt));
