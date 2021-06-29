@@ -71,7 +71,6 @@ static struct cmd cmdv[] = {
 };
 
 static char errbuf[128];
-static const size_t errbufsz = sizeof(errbuf);
 
 static int
 nyi(struct cmd *cmd)
@@ -109,55 +108,40 @@ static char *rhostpath, *mntnode;
 static size_t readsize = 131072;
 static size_t writesize = 131072;
 
-static clp_posparam_t mount_posparamv[] = {
-    {
-        .name = "rhostpath",
-        .help = "[user@]rhost:path",
-        .convert = clp_cvt_string,
-        .cvtdst = &rhostpath,
-    },
-
-    {
-        .name = "node",
-        .help = "mount point",
-        .convert = clp_cvt_string,
-        .cvtdst = &mntnode,
-    },
-
-    CLP_PARAM_END
+static struct clp_posparam mount_posparamv[] = {
+    CLP_POSPARAM("rhostpath", string, rhostpath, NULL, NULL, "[user@]rhost:path"),
+    CLP_POSPARAM("node", string, mntnode, NULL, NULL, "mount point"),
+    CLP_POSPARAM_END
 };
 
-static clp_option_t mount_optionv[] = {
-    CLP_OPTION_VERBOSE(verbosity),
+static struct clp_option mount_optionv[] = {
+    CLP_OPTION('p', uint16_t, port, NULL, "remote NFSd port"),
+    CLP_OPTION('r', size_t, readsize, NULL, "read size"),
+    CLP_OPTION('w', size_t, writesize, NULL, "write size"),
+
+    CLP_OPTION_VERBOSITY(verbosity),
     CLP_OPTION_VERSION(version),
     CLP_OPTION_HELP,
-
-    CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "remote NFSd port"),
-    CLP_OPTION(size_t, 'r', readsize, NULL, NULL, "read size"),
-    CLP_OPTION(size_t, 'w', writesize, NULL, NULL, "write size"),
-
     CLP_OPTION_END
 };
 
 static bool
 mount_given(int c)
 {
-    clp_option_t *opt = clp_option_find(mount_optionv, c);
-
-    return (opt && opt->given);
+    return !!clp_given(c, mount_optionv, NULL);
 }
 
 static int
 mount(struct cmd *cmd)
 {
-    int argc, optind, rc;
+    int argc, rc;
     char **argv;
 
-    rc = clp_breakargs(cmd->line, NULL, errbuf, errbufsz, &argc, &argv);
+    rc = clp_breakargs(cmd->line, NULL, &argc, &argv);
     if (rc)
         return rc;
 
-    rc = clp_parsev(argc, argv, mount_optionv, mount_posparamv, errbuf, errbufsz, &optind);
+    rc = clp_parsev(argc, argv, mount_optionv, mount_posparamv);
     if (rc) {
         free(argv);
         return rc;

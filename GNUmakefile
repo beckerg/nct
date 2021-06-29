@@ -18,11 +18,10 @@ HDR	+= nct_nfstypes.h
 LDLIBS	:= -lpthread
 VPATH	:=
 
-NCT_VERSION	:= $(shell git describe --abbrev=10 --dirty --always --tags)
-PLATFORM	:= $(shell uname -s | tr 'a-z' 'A-Z')
+NCT_VERSION := $(shell git describe --abbrev=10 --dirty --always --tags)
 
-INCLUDE 	:= -I. -I../lib -I../../src/include
-CDEFS 		:= -DNCT_VERSION=\"${NCT_VERSION}\"
+INCLUDE := -I. -I../lib -I../../src/include
+CDEFS   := -DNCT_VERSION=\"${NCT_VERSION}\"
 
 ifneq ($(wildcard /usr/include/tirpc/rpc/rpc.h),)
 	INCLUDE := -I/usr/include/tirpc ${INCLUDE}
@@ -30,12 +29,11 @@ ifneq ($(wildcard /usr/include/tirpc/rpc/rpc.h),)
 	LDLIBS += -ltirpc
 endif
 
-CFLAGS		+= -Wall -g -O2 ${INCLUDE}
-DEBUG		:= -O0 -DDEBUG -UNDEBUG -fno-omit-frame-pointer
-CPPFLAGS	:= ${CDEFS}
-OBJ		:= ${SRC:.c=.o}
+CFLAGS   += -Wall -g -O2 ${INCLUDE}
+CPPFLAGS := ${CDEFS}
+OBJ      := ${SRC:.c=.o}
 
-CSCOPE_DIRS	?= \
+CSCOPE_DIRS ?= \
 	. ${VPATH} \
 	$(patsubst %, /usr/src/%, sys include sbin lib/libc) \
 	$(patsubst %, /usr/src/%, lib/libthr lib/libthread_db) \
@@ -45,8 +43,6 @@ CSCOPE_DIRS	?= \
 
 CSCOPE_EXCLUDE	?= '^/usr/src/sys/(arm|i386|ia64|mips|powerpc|sparc64|sun4v|pc98|xen|gnu|netatalk|coda|dev/sound|dev/firewire|dev/digi|dev/cardbus|dev/bktr|dev/w[il]|dev/usb/wlan|dev/xen|contrib/altq|contrib/ia64|contrib/ngatm|contrib/octeon-sdk|boot/(arm|i386|ia64|mips|powerpc|sparc64|sun4v|pc98))/.*'
 
-# Always delete partially built targets.
-#
 .DELETE_ON_ERROR:
 
 .PHONY:	all asan clean clobber cscope debug etags native tags
@@ -54,14 +50,15 @@ CSCOPE_EXCLUDE	?= '^/usr/src/sys/(arm|i386|ia64|mips|powerpc|sparc64|sun4v|pc98|
 
 all: ${PROG}
 
-asan: CFLAGS += ${DEBUG}
+asan: CPPFLAGS += -DDEBUG -UNDEBUG
+asan: CFLAGS += -O0  -fno-omit-frame-pointer
 asan: CFLAGS += -fsanitize=address -fsanitize=undefined
 asan: LDLIBS += -fsanitize=address -fsanitize=undefined
 asan: ${PROG}
 
 clean:
 	rm -f ${PROG} ${OBJ} *.core
-	rm -f $(patsubst %.c,.%.d,${SRC})
+	rm -f $(patsubst %.c,.%.d*,${SRC})
 
 cleandir clobber distclean: clean
 	rm -f cscope.files cscope*.out TAGS
@@ -79,7 +76,8 @@ cscope.files: GNUmakefile ${HDR} ${SRC}
 	fi
 	mv $@.tmp $@
 
-debug: CFLAGS += ${DEBUG}
+debug: CPPFLAGS += -DDEBUG -UNDEBUG
+debug: CFLAGS += -O0  -fno-omit-frame-pointer
 debug: ${PROG}
 
 native: CFLAGS += -march=native
@@ -90,19 +88,11 @@ tags etags: TAGS
 TAGS: cscope.files
 	cat cscope.files | xargs etags -a --members --output=$@
 
-# Use gmake's link rule to produce the target.
-#
 ${PROG}: ${OBJ}
 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
 
-
-# We make ${OBJ} depend on the GNUmakefile so that all objects are rebuilt
-# if the makefile changes.
-#
 ${OBJ}: GNUmakefile
 
-# Automatically generate/maintain dependency files.
-#
 .%.d: %.c
 	@set -e; rm -f $@; \
 	$(CC) -M $(CPPFLAGS) ${INCLUDE} $< > $@.$$$$; \

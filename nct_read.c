@@ -35,6 +35,7 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
+#include <getopt.h>
 
 #include <rpc/types.h>
 #include <rpc/auth.h>
@@ -56,28 +57,15 @@ typedef struct {
 static size_t length = 4096;
 static char *rhostpath;
 
-static clp_posparam_t posparamv[] = {
-    {
-        .name = "rhostpath",
-        .help = "[user@]rhost:path",
-        .convert = clp_cvt_string,
-        .cvtdst = &rhostpath,
-    },
-
-    {
-        .name = "[length]",
-        .help = "read length (in bytes)",
-        .convert = clp_cvt_u_long,
-        .cvtdst = &length,
-    },
-
-    CLP_PARAM_END
+static struct clp_posparam posparamv[] = {
+    CLP_POSPARAM("rhostpath", string, rhostpath, NULL, NULL, "[user@]rhost:path"),
+    CLP_POSPARAM("[length]", u_long, length, NULL, NULL, "read length (bytes)"),
+    CLP_POSPARAM_END
 };
 
-static clp_option_t optionv[] = {
-    CLP_OPTION_VERBOSE(verbosity),
+static struct clp_option optionv[] = {
+    CLP_OPTION_VERBOSITY(verbosity),
     CLP_OPTION_HELP,
-
     CLP_OPTION_END
 };
 
@@ -87,22 +75,17 @@ static int test_read_cb(struct nct_req *req);
 static bool
 given(int c)
 {
-    clp_option_t *opt = clp_option_find(optionv, c);
-
-    return (opt && opt->given);
+    return !!clp_given(c, optionv, NULL);
 }
 
 void *
 test_read_init(int argc, char **argv, int duration, start_t **startp, char **rhostpathp)
 {
     test_read_priv_t *priv;
-    char errbuf[128];
-    int optind;
     int rc;
 
-    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, sizeof(errbuf), &optind);
+    rc = clp_parsev(argc, argv, optionv, posparamv);
     if (rc) {
-        eprint("%s\n", errbuf);
         exit(rc);
     }
 

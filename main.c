@@ -43,6 +43,7 @@
 #include <sys/stat.h>
 #include <pthread.h>
 #include <limits.h>
+#include <dirent.h>
 
 #include <rpc/types.h>
 #include <rpc/auth.h>
@@ -81,52 +82,40 @@ u_int mark = 0;
 bool have_tsc __read_mostly;
 uint64_t tsc_freq __read_mostly;
 
-static clp_posparam_t posparamv[] = {
-    { .name = "command",
-      .help = "command to run [getattr,read,shell]",
-      .convert = clp_cvt_string, .cvtdst = &command, },
-
-    { .name = "[args...]",
-      .help = "command arguments",
-      .convert = clp_cvt_string, .cvtdst = &args, },
-
-    CLP_PARAM_END
+static struct clp_posparam posparamv[] = {
+    CLP_POSPARAM("command", string, command, NULL, NULL, "command to run [getattr,read,shell]"),
+    CLP_POSPARAM("[args...]", string, args, NULL, NULL, "command arguments"),
+    CLP_POSPARAM_END
 };
 
-static clp_option_t optionv[] = {
-    CLP_OPTION_VERBOSE(verbosity),
+static struct clp_option optionv[] = {
+    CLP_OPTION('d', time_t, duration, NULL, "duration of the test (in seconds)"),
+    CLP_OPTION('j', u_int, jobs_max, NULL, "max number of NFS request threads"),
+    CLP_OPTION('m', u_int, mark, NULL, "print status every mark seconds"),
+    CLP_OPTION('o', string, outdir, NULL, "directory in which to store results"),
+    CLP_OPTION('p', uint16_t, port, NULL, "remote NFSd port"),
+    CLP_OPTION('T', string, term, NULL, "terminal type for gnuplot"),
+    CLP_OPTION('t', u_int, tds_max, NULL, "max number of NFS reply threads"),
+
+    CLP_OPTION_VERBOSITY(verbosity),
     CLP_OPTION_VERSION(version),
     CLP_OPTION_HELP,
-
-    CLP_OPTION(time_t, 'd', duration, NULL, NULL, "duration of the test (in seconds)"),
-    CLP_OPTION(u_int, 'j', jobs_max, NULL, NULL, "max number of NFS request threads"),
-    CLP_OPTION(u_int, 'm', mark, NULL, NULL, "print status every mark seconds"),
-    CLP_OPTION(string, 'o', outdir, NULL, NULL, "directory in which to store results"),
-    CLP_OPTION(uint16_t, 'p', port, NULL, NULL, "remote NFSd port"),
-    CLP_OPTION(string, 'T', term, NULL, NULL, "terminal type for gnuplot"),
-    CLP_OPTION(u_int, 't', tds_max, NULL, NULL, "max number of NFS reply threads"),
-
     CLP_OPTION_END
 };
 
 static bool
 given(int c)
 {
-    clp_option_t *opt = clp_option_find(optionv, c);
-
-    return (opt && opt->given);
+    return !!clp_given(c, optionv, NULL);
 }
 
 int
 main(int argc, char **argv)
 {
-    char errbuf[128];
     char state[256];
     char *envopts;
-    int optind;
     char *pc;
-    int rc;
-    int i;
+    int rc, i;
 
     progname = strrchr(argv[0], '/');
     progname = (progname ? progname + 1 : argv[0]);
@@ -140,23 +129,22 @@ main(int argc, char **argv)
     /* TODO: Get options from the environment.
      */
     {
-        char PROGNAME[1024];
-        char *uc = PROGNAME;
+        char progname_uc[MAXNAMLEN + 1];
+        char *uc = progname_uc;
 
         for (pc = progname; *pc; ++pc) {
             *uc++ = toupper(*pc);
         }
         *uc = '\000';
 
-        envopts = getenv(PROGNAME);
+        envopts = getenv(progname_uc);
         if (envopts) {
-            eprint("environment options %s=\"%s\" ignored\n", PROGNAME, envopts);
+            eprint("getenv %s=\"%s\" ignored\n", progname_uc, envopts);
         }
     }
 
-    rc = clp_parsev(argc, argv, optionv, posparamv, errbuf, sizeof(errbuf), &optind);
+    rc = clp_parsev(argc, argv, optionv, posparamv);
     if (rc) {
-        eprint("%s\n", errbuf);
         exit(rc);
     }
 
